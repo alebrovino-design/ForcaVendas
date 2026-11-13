@@ -372,6 +372,28 @@ class ClientProductsFragment : Fragment() {
             val bonus = quantityField("Qtd. bonificação", cartItem?.bonusQuantity ?: 0.0)
             quantities.addView(sold.first)
             quantities.addView(bonus.first)
+            
+            // Adicionar informações de bonificação
+            val soldQuantityForLimit = groupSoldQuantity(product.productGroupId, cartItem?.soldQuantity ?: 0.0, product.code)
+            val limit = BonusConfigurationService.getBonusLimit(requireContext(), regionId, product.productGroupId, soldQuantityForLimit)
+            val otherBonusInGroup = cartItems
+                .filter { it.productGroupId == product.productGroupId && it.productCode != product.code }
+                .sumOf { it.bonusQuantity }
+            
+            if (limit != null) {
+                val bonusInfoText = TextView(requireContext()).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = dp(8) }
+                    textSize = 12f
+                    setTextColor(resources.getColor(R.color.text_secondary, requireContext().theme))
+                    text = "Saldo: ${formatQuantity((limit.allowedBonus - otherBonusInGroup).coerceAtLeast(0.0))} unid. | " +
+                        "Base ${formatQuantity(limit.bonusPercent)}% + tolerância ${formatQuantity(limit.extraPercent)}%"
+                }
+                quantities.addView(bonusInfoText)
+            }
+            
             content.addView(quantities)
 
             val addButton = com.google.android.material.button.MaterialButton(requireContext()).apply {
