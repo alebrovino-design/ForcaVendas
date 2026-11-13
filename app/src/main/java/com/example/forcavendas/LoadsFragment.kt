@@ -85,7 +85,21 @@ class LoadsFragment : Fragment() {
                 } catch (e: Exception) {
                     // Try to extract array from object
                     val obj = JSONObject(response)
-                    obj.optJSONArray("value") ?: obj.optJSONArray("d") ?: obj.optJSONArray("results") ?: JSONArray()
+                    val allKeys = obj.keys().asSequence().toList()
+                    
+                    var found = obj.optJSONArray("value")
+                    if (found == null) found = obj.optJSONArray("d")
+                    if (found == null) found = obj.optJSONArray("results")
+                    if (found == null) found = obj.optJSONArray("cargas")
+                    if (found == null) found = obj.optJSONArray("data")
+                    
+                    android.widget.Toast.makeText(
+                        requireContext(),
+                        "Estrutura: $allKeys - Encontrou: ${found?.length() ?: "NADA"}",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                    
+                    found ?: JSONArray()
                 }
                 
                 Handler(Looper.getMainLooper()).post {
