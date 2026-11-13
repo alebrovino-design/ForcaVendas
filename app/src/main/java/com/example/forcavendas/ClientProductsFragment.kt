@@ -100,10 +100,28 @@ class ClientProductsFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         binding?.clientProductsBack?.setOnClickListener { findNavController().navigateUp() }
-        val clientName = arguments?.getString("client_name").orEmpty()
+        var clientName = arguments?.getString("client_name").orEmpty()
         clientId = arguments?.getString("client_id").orEmpty()
         regionId = arguments?.getString("client_region_id").orEmpty()
         editOrderMobileId = arguments?.getString("edit_order_mobile_id").orEmpty()
+        if (editOrderMobileId.isNotBlank()) {
+            val draft = OrderDraftService.load(requireContext())
+                .firstOrNull { it.mobileId.toString() == editOrderMobileId && it.erpId <= 0L }
+            if (draft == null) {
+                Toast.makeText(requireContext(), "O rascunho não foi encontrado ou já foi enviado ao ERP.", Toast.LENGTH_LONG).show()
+                findNavController().navigateUp()
+                return
+            }
+            val order = draft.json.optJSONObject("sdtPedidoAppVenda")
+            clientId = clientId.ifBlank { draft.clientId }
+            clientName = clientName.ifBlank { draft.clientName }
+            regionId = regionId.ifBlank { draft.regionId }
+            restoreDraftCart(draft)
+            if (order != null) {
+                clientId = clientId.ifBlank { order.optString("PedidoEntidadeId") }
+                regionId = regionId.ifBlank { order.optString("PedidoEntidadeRegiaoid") }
+            }
+        }
         binding?.clientProductsClient?.text =
             if (clientName.isBlank()) "Código ERP: $clientId" else "$clientName - Código ERP: $clientId"
 
@@ -133,6 +151,67 @@ class ClientProductsFragment : Fragment() {
         updateBonusSummary()
         setupProductGroupFilter()
         loadProducts(regionId)
+    }
+
+    private fun restoreDraftCart(draft: OrderDraftService.Draft) {
+        val order = draft.json.optJSONObject("sdtPedidoAppVenda") ?: return
+        val items = order.optJSONArray("ItemPedido")
+            ?: order.optJSONArray("PedidoProdutos")
+            ?: order.optJSONArray("PedidoItens")
+            ?: return
+        val localProducts = ProductLocalRepository(requireContext()).getAll().associateBy { it.code }
+        val priceItems = PriceTableItemService.load(requireContext())
+        val restored = linkedMapOf<String, ClientCartService.CartItem>()
+
+        fun number(item: org.json.JSONObject, vararg names: String): Double {
+            names.forEach { name ->
+                val value = item.optString(name).trim()
+                if (value.isNotBlank() && value != "null") {
+                    value.replace(",", ".").toDoubleOrNull()?.let { return it }
+                }
+            }
+            return 0.0
+        }
+
+        for (index in 0 until items.length()) {
+            val item = items.optJSONObject(index) ?: continue
+            val productCode = listOf(
+                "ItemPedidoProdutoCodigo",
+                "ProdutoCodigo",
+                "ItemPedidoProdutoId"
+            ).firstNotNullOfOrNull { key ->
+                item.optString(key).takeIf { it.isNotBlank() && it != "null" }
+            } ?: continue
+            val localProduct = localProducts[productCode]
+            val existing = restored[productCode]
+            val quantity = number(item, "ItemPedidoQtde", "ProdutoQuantidade", "Quantidade")
+            val isBonus = number(item, "ItemPedidoAceite", "ItemPedidoAluminioAceite") > 0.0
+            val currentPrice = (0 until priceItems.length())
+                .asSequence()
+                .mapNotNull { priceItems.optJSONObject(it) }
+                .firstOrNull {
+                    it.optString("ItemtabelaProdutoCodigo") == productCode &&
+                        (regionId.isBlank() || it.optString("RegiaoId") == regionId)
+                }
+                ?.optString("ItemtabelaVlrVenda")
+                .orEmpty()
+            val price = item.optString("ItemPedidoVlrOriginal")
+                .ifBlank { item.optString("ItemPedidoVrlUnitario") }
+                .ifBlank { currentPrice }
+            restored[productCode] = ClientCartService.CartItem(
+                productCode = productCode,
+                description = item.optString("ItemPedidoProdutoDescricao")
+                    .ifBlank { localProduct?.description.orEmpty() },
+                photoUrl = item.optString("ItemPedidoProdutoFoto")
+                    .ifBlank { localProduct?.photoUrl.orEmpty() },
+                price = price,
+                soldQuantity = (existing?.soldQuantity ?: 0.0) + if (isBonus) 0.0 else quantity,
+                bonusQuantity = (existing?.bonusQuantity ?: 0.0) + if (isBonus) quantity else 0.0,
+                productGroupId = item.optString("ItemPedidoProdutoGrupoId")
+                    .ifBlank { localProduct?.productGroupId.orEmpty() }
+            )
+        }
+        ClientCartService.save(requireContext(), draft.clientId, restored.values.toList())
     }
 
     private fun setupProductGroupFilter() {
@@ -1471,7 +1550,10 @@ class ClientProductsFragment : Fragment() {
         updateCartButton()
         Toast.makeText(requireContext(), "Pedido salvo como rascunho offline.", Toast.LENGTH_LONG).show()
         try {
-            findNavController().navigate(R.id.OrdersFragment)
+            val navController = findNavController()
+            val returnedToOrders = editOrderMobileId.isNotBlank() &&
+                navController.popBackStack(R.id.OrdersFragment, false)
+            if (!returnedToOrders) navController.navigate(R.id.OrdersFragment)
         } catch (exception: Exception) {
             Log.e("ClientProductsFragment", "Pedido salvo, mas não foi possível abrir Pedidos", exception)
             Toast.makeText(

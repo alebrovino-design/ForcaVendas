@@ -93,7 +93,11 @@
         android:id="@+id/OrdersFragment"
         android:name="com.example.forcavendas.OrdersFragment"
         android:label="Pedidos"
-        tools:layout="@layout/fragment_orders" />
+        tools:layout="@layout/fragment_orders">
+        <action
+            android:id="@+id/action_OrdersFragment_to_ClientProductsFragment"
+            app:destination="@id/ClientProductsFragment" />
+    </fragment>
 
     <fragment
         android:id="@+id/FinancialFragment"

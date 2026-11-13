@@ -8,6 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 
 object ERPOrderDownloadService {
     private const val TAG = "ERPOrderDownload"
@@ -53,8 +54,8 @@ object ERPOrderDownloadService {
                 )
             }
 
-            // Construir URL com parâmetros URL-encoded
-            val urlString = "$BASE_URL?Parametrostegaceptoken=$token&Representanteid=$repId"
+            val urlString = "$BASE_URL?Parametrostegaceptoken=${URLEncoder.encode(token, "UTF-8")}" +
+                "&Representanteid=${URLEncoder.encode(repId, "UTF-8")}"
             Log.d(TAG, "Iniciando download para representante: $repId")
             Log.d(TAG, "Conectando a: $BASE_URL")
             
@@ -78,6 +79,7 @@ object ERPOrderDownloadService {
             }
             
             val response = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
+            connection.disconnect()
             Log.d(TAG, "Response length: ${response.length} bytes")
 
             return@withContext when (responseCode) {
@@ -93,16 +95,21 @@ object ERPOrderDownloadService {
                             ordersCount = 0
                         )
                     } else {
-                        Log.d(TAG, "Encontrados ${orders.length()} pedidos")
                         val repository = ERPOrderLocalRepository(context)
-                        repository.saveOrders(repId, orders)
-                        Log.d(TAG, "Pedidos salvos no banco de dados")
-                        
-                        Result(
-                            success = true,
-                            message = "${orders.length()} pedidos sincronizados com sucesso",
-                            ordersCount = orders.length()
-                        )
+                        val savedCount = repository.saveOrders(repId, orders)
+                        if (savedCount == 0) {
+                            Result(
+                                success = false,
+                                message = "A resposta do ERP não continha pedidos com identificadores válidos",
+                                error = "Recebidos ${orders.length()} registros; nenhum pôde ser salvo."
+                            )
+                        } else {
+                            Result(
+                                success = true,
+                                message = "$savedCount pedidos salvos no histórico local",
+                                ordersCount = savedCount
+                            )
+                        }
                     }
                 }
                 401 -> {
@@ -185,31 +192,51 @@ object ERPOrderDownloadService {
     }
 
     private fun extractOrders(response: String): JSONArray {
-        return try {
-            val trimmed = response.trim()
-            
-            // Se já é um array, retorna direto
-            if (trimmed.startsWith("[")) return JSONArray(trimmed)
+        val trimmed = response.trim()
+        if (trimmed.startsWith("[")) return JSONArray(trimmed)
+        val root = JSONObject(trimmed)
+        findOrders(root, 0)?.let { return it }
+        if (root.has("PedidoMobId") || root.has("PedidoERPId")) {
+            return JSONArray().put(root)
+        }
+        throw IllegalStateException("Formato da resposta ERP não reconhecido")
+    }
 
-            // Tenta extrair de propriedades comuns
-            val root = JSONObject(trimmed)
-            listOf("value", "results", "data", "d").forEach { key ->
-                val obj = root.opt(key)
-                when (obj) {
-                    is JSONArray -> return obj
-                    is JSONObject -> {
-                        val arr = obj.optJSONArray("value") ?: obj.optJSONArray("results") 
-                        if (arr != null) return arr
+    private fun findOrders(value: Any?, depth: Int): JSONArray? {
+        if (depth > 4) return null
+        when (value) {
+            is JSONArray -> return value
+            is JSONObject -> {
+                if (value.has("PedidoMobId") || value.has("PedidoERPId")) {
+                    return JSONArray().put(value)
+                }
+                val keys = listOf(
+                    "value",
+                    "results",
+                    "data",
+                    "d",
+                    "Pedidos",
+                    "pedidos",
+                    "sdtPedidoAppVenda",
+                    "dpPedidoVendaRepAPPVenda"
+                )
+                keys.forEach { key ->
+                    val nested = value.opt(key) ?: return@forEach
+                    when (nested) {
+                        is JSONArray -> return nested
+                        is JSONObject -> findOrders(nested, depth + 1)?.let { return it }
+                        is String -> {
+                            val text = nested.trim()
+                            if (text.startsWith("[")) return JSONArray(text)
+                            if (text.startsWith("{")) {
+                                findOrders(JSONObject(text), depth + 1)?.let { return it }
+                            }
+                        }
                     }
                 }
             }
-
-            // Se não encontrou em estrutura comum, retorna o array vazio
-            JSONArray()
-        } catch (e: Exception) {
-            Log.e(TAG, "Erro ao extrair pedidos da resposta", e)
-            JSONArray()
         }
+        return null
     }
 
     fun isErpOrder(draft: OrderDraftService.Draft): Boolean {

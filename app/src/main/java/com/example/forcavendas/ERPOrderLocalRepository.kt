@@ -59,39 +59,37 @@ class ERPOrderLocalRepository(context: Context) {
 
     private val database = Database(context.applicationContext)
 
-    fun saveOrders(representanteId: String, orders: JSONArray) {
+    fun saveOrders(representanteId: String, orders: JSONArray): Int {
         val db = database.writableDatabase
+        var savedCount = 0
         db.beginTransaction()
         try {
-            android.util.Log.d("ERPOrderRepository", "Salvando ${orders.length()} pedidos")
-            
             for (index in 0 until orders.length()) {
-                val item = orders.getJSONObject(index)
-                
-                // Debug: print primeiro pedido
-                if (index == 0) {
-                    android.util.Log.d("ERPOrderRepository", "Primeiro pedido: ${item.toString()}")
-                }
-                
-                val mobileId = item.optLong("PedidoMobId", 0L)
-                val erpId = item.optLong("PedidoERPId", 0L)
+                val responseItem = orders.optJSONObject(index) ?: continue
+                val item = responseItem.optJSONObject("sdtPedidoAppVenda") ?: responseItem
+                val mobileId = firstLong(item, "PedidoMobId", "PedidoMobileId")
+                val erpId = firstLong(item, "PedidoERPId", "PedidoErpId")
 
                 if (mobileId == 0L || erpId == 0L) {
                     android.util.Log.w("ERPOrderRepository", "Pulando pedido sem IDs válidos: mobileId=$mobileId, erpId=$erpId")
                     continue
                 }
 
-                val clientId = item.optString("PedidoEntidadeId", "")
-                val clientName = item.optString("PedidoEntidadeNome", "").ifBlank {
-                    item.optString("PedidoEntidadeNomeFantasia", "")
-                }
-                val regionId = item.optString("PedidoEntidadeRegiaoid", "")
-                val status = item.optString("PedidoStatus", "Processado")
-                val total = item.optDouble("PedidoVlrTotal", 0.0)
-                val emissionDate = item.optString("PedidoDtEmissao", "")
-
-                android.util.Log.d("ERPOrderRepository", 
-                    "Pedido $erpId: $clientName (R$ $total)")
+                val clientId = firstString(item, "PedidoEntidadeId")
+                val clientName = firstString(
+                    item,
+                    "PedidoEntidadeNome",
+                    "PedidoEntidadeNomeRazao",
+                    "PedidoEntidadeNomeFantasia"
+                )
+                val regionId = firstString(
+                    item,
+                    "PedidoEntidadeRegiaoid",
+                    "PedidoEntidadeRegiaoId"
+                )
+                val status = firstString(item, "PedidoStatus").ifBlank { "Processado" }
+                val total = firstDouble(item, "PedidoVlrTotal", "PedidoValorTotal")
+                val emissionDate = firstString(item, "PedidoDtEmissao", "PedidoDtCadastro")
 
                 val values = ContentValues().apply {
                     put("mobile_id", mobileId)
@@ -108,22 +106,45 @@ class ERPOrderLocalRepository(context: Context) {
                     put("synced_at", System.currentTimeMillis())
                 }
 
-                db.insertWithOnConflict(
+                val rowId = db.insertWithOnConflict(
                     "erp_orders",
                     null,
                     values,
                     SQLiteDatabase.CONFLICT_REPLACE
                 )
+                if (rowId != -1L) savedCount++
             }
 
-            android.util.Log.d("ERPOrderRepository", "Transação bem-sucedida")
             updateSyncMetadata(db, representanteId, orders.length())
             db.setTransactionSuccessful()
-        } catch (e: Exception) {
-            android.util.Log.e("ERPOrderRepository", "Erro ao salvar pedidos", e)
         } finally {
             db.endTransaction()
         }
+        return savedCount
+    }
+
+    private fun firstString(json: JSONObject, vararg names: String): String {
+        names.forEach { name ->
+            val value = json.optString(name).trim()
+            if (value.isNotEmpty() && value != "null") return value
+        }
+        return ""
+    }
+
+    private fun firstLong(json: JSONObject, vararg names: String): Long {
+        names.forEach { name ->
+            val value = json.optString(name).trim()
+            value.toLongOrNull()?.let { return it }
+        }
+        return 0L
+    }
+
+    private fun firstDouble(json: JSONObject, vararg names: String): Double {
+        names.forEach { name ->
+            val value = json.optString(name).trim()
+            value.replace(",", ".").toDoubleOrNull()?.let { return it }
+        }
+        return 0.0
     }
 
     private fun updateSyncMetadata(db: SQLiteDatabase, representanteId: String, syncCount: Int) {
