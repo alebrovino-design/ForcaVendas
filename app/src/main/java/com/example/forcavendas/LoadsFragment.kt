@@ -51,9 +51,11 @@ class LoadsFragment : Fragment() {
                     val obj = JSONObject(cached)
                     obj.optJSONArray("value") ?: obj.optJSONArray("d") ?: obj.optJSONArray("results") ?: JSONArray()
                 }
+                android.widget.Toast.makeText(requireContext(), "Cache: ${loads.length()} cargas", android.widget.Toast.LENGTH_SHORT).show()
                 showLoads(loads)
                 binding?.loadsProgress?.visibility = View.GONE
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(requireContext(), "Erro no cache: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
             }
         }
 
@@ -124,8 +126,11 @@ class LoadsFragment : Fragment() {
         if (loads.length() == 0) {
             binding?.loadsMessage?.visibility = View.VISIBLE
             binding?.loadsMessage?.text = "Nenhuma carga encontrada."
+            android.widget.Toast.makeText(requireContext(), "showLoads chamado com 0 cargas!", android.widget.Toast.LENGTH_LONG).show()
             return
         }
+
+        android.widget.Toast.makeText(requireContext(), "Renderizando ${loads.length()} cargas", android.widget.Toast.LENGTH_SHORT).show()
 
         val sortedLoads = mutableListOf<JSONObject>()
         for (index in 0 until loads.length()) {
