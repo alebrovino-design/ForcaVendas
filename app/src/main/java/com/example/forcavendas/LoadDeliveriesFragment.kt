@@ -130,8 +130,9 @@ class LoadDeliveriesFragment : Fragment() {
                 delivery,
                 "CargaId", "CargaID", "CargaCargaId", "cargaId", "Carga"
             )
-            val belongsToLoad = deliveryLoadId.isBlank() || deliveryLoadId.trim() == loadId.trim()
-            if (belongsToLoad) filtered.add(delivery)
+            if (deliveryLoadId.trim() == loadId.trim()) {
+                filtered.add(delivery)
+            }
         }
 
         if (filtered.isEmpty()) {
