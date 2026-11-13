@@ -59,11 +59,11 @@ class LoadsFragment : Fragment() {
                 android.util.Log.d("LoadsFragment", "Buscando cargas para usuário: $userId")
                 android.util.Log.d("LoadsFragment", "Token: ${token.take(20)}...")
                 
-                val endpoint = "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpCargaRepresentanteAppVenda" +
+                val endpoint = "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpCargaRepAPPVenda" +
                     "?Parametrostegaceptoken=${URLEncoder.encode(token, "UTF-8")}" +
                     "&Representanteid=${URLEncoder.encode(userId, "UTF-8")}"
                 
-                android.util.Log.d("LoadsFragment", "Conectando a: https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpCargaRepresentanteAppVenda")
+                android.util.Log.d("LoadsFragment", "Conectando a: https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpCargaRepAPPVenda")
                 
                 val connection = URL(endpoint).openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
