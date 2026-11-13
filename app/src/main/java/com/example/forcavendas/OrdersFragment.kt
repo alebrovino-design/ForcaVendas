@@ -51,6 +51,7 @@ class OrdersFragment : Fragment() {
         binding?.ordersSync?.setOnClickListener { sincronizarPedidosPendentes() }
         binding?.ordersRefresh?.setOnClickListener { baixarPedidosDoERP() }
         renderOrders()
+        baixarPedidosDoERP()
     }
 
     override fun onResume() {
@@ -225,7 +226,7 @@ class OrdersFragment : Fragment() {
             )
         }
 
-        // Row 1: Editar + Remover (if editable)
+        // Row 1: Remover (if editable)
         if (!isErp) {
             val row1 = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -234,21 +235,6 @@ class OrdersFragment : Fragment() {
                     dp(48)
                 ).apply { bottomMargin = dp(8) }
             }
-
-            row1.addView(createActionButton("✏️ Editar", "Editar este pedido") {
-                try {
-                    // TODO: Implementar navegação para tela de edição
-                    val bundle = bundleOf("pedidoId" to draft.mobileId, "pedidoJson" to draft.json.toString())
-                    android.util.Log.d("OrdersFragment", "Navegar para edição do pedido ${draft.mobileId}")
-                    Toast.makeText(requireContext(), "Editando pedido ${draft.mobileId}", Toast.LENGTH_SHORT).show()
-                    
-                    // Se quiser navegar, descomente e ajuste a action:
-                    // findNavController().navigate(R.id.action_orders_to_edit, bundle)
-                } catch (e: Exception) {
-                    android.util.Log.e("OrdersFragment", "Erro ao editar", e)
-                    Toast.makeText(requireContext(), "Erro: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            })
 
             row1.addView(createActionButton("🗑️ Remover", "Remover este pedido") {
                 AlertDialog.Builder(requireContext())
@@ -260,6 +246,9 @@ class OrdersFragment : Fragment() {
                     }
                     .setNegativeButton("Cancelar", null)
                     .show()
+            }.apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+                    .apply { marginEnd = dp(8) }
             })
 
             buttonsContainer.addView(row1)
@@ -276,10 +265,15 @@ class OrdersFragment : Fragment() {
 
         row2.addView(createActionButton("📄 PDF", "Exportar como PDF") {
             generateOrderPdf(draft)
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+                .apply { marginEnd = dp(8) }
         })
 
         row2.addView(createActionButton("📦 JSON", "Compartilhar JSON") {
             generateOrderJson(draft)
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
         })
 
         buttonsContainer.addView(row2)
