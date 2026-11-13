@@ -69,7 +69,7 @@ class LoadDeliveriesFragment : Fragment() {
                 val endpoint =
                     "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpEntregaCargaRepAPPVenda" +
                         "?Parametrostegaceptoken=${URLEncoder.encode(token, "UTF-8")}" +
-                        "&Representanteid=${URLEncoder.encode(userId, "UTF-8")}"
+                        "&Usuarioid=${URLEncoder.encode(userId, "UTF-8")}"
                 
                 Log.d("LoadDeliveriesFragment", "Conectando a: https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpEntregaCargaRepAPPVenda")
                 
