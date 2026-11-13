@@ -121,8 +121,6 @@ class LoadDeliveriesFragment : Fragment() {
 
     private fun showDeliveries(deliveries: JSONArray, loadId: String) {
         val list = binding?.deliveriesList ?: return
-        val preferences = requireContext().getSharedPreferences("forca_vendas", 0)
-        val userId = preferences.getString("user_id", "").orEmpty()
         list.removeAllViews()
 
         val filtered = mutableListOf<JSONObject>()
@@ -132,14 +130,8 @@ class LoadDeliveriesFragment : Fragment() {
                 delivery,
                 "CargaId", "CargaID", "CargaCargaId", "cargaId", "Carga"
             )
-            val deliveryRepresentative = firstValue(
-                delivery,
-                "RepresentanteId", "Representanteid", "UsuarioId", "Usuarioid", "usuarioId"
-            )
             val belongsToLoad = deliveryLoadId.isBlank() || deliveryLoadId.trim() == loadId.trim()
-            val belongsToRepresentative =
-                deliveryRepresentative.isBlank() || deliveryRepresentative.trim() == userId.trim()
-            if (belongsToLoad && belongsToRepresentative) filtered.add(delivery)
+            if (belongsToLoad) filtered.add(delivery)
         }
 
         if (filtered.isEmpty()) {
