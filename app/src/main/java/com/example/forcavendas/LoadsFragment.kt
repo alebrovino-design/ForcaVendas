@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.graphics.Typeface
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -44,7 +45,13 @@ class LoadsFragment : Fragment() {
         val cached = preferences.getString("loads_synced_json", null)
         if (!cached.isNullOrBlank()) {
             try {
-                showLoads(JSONArray(cached))
+                val loads = try {
+                    JSONArray(cached)
+                } catch (e: Exception) {
+                    val obj = JSONObject(cached)
+                    obj.optJSONArray("value") ?: obj.optJSONArray("d") ?: obj.optJSONArray("results") ?: JSONArray()
+                }
+                showLoads(loads)
                 binding?.loadsProgress?.visibility = View.GONE
             } catch (_: Exception) {
             }
@@ -71,7 +78,24 @@ class LoadsFragment : Fragment() {
                     throw Exception("Erro HTTP $responseCode")
                 }
 
-                val loads = JSONArray(response)
+                val loads = try {
+                    JSONArray(response)
+                } catch (e: Exception) {
+                    // Try to extract array from object
+                    val obj = JSONObject(response)
+                    obj.optJSONArray("value") ?: obj.optJSONArray("d") ?: obj.optJSONArray("results") ?: JSONArray()
+                }
+                
+                Handler(Looper.getMainLooper()).post {
+                    if (isAdded) {
+                        android.widget.Toast.makeText(
+                            requireContext(),
+                            "Cargas recebidas: ${loads.length()}",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+                
                 preferences.edit()
                     .putString("loads_synced_json", response)
                     .putInt("loads_synced_count", loads.length())
