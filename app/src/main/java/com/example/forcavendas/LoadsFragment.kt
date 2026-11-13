@@ -42,11 +42,36 @@ class LoadsFragment : Fragment() {
         binding?.loadsMessage?.visibility = View.GONE
         val preferences = requireContext().getSharedPreferences("forca_vendas", 0)
         val cached = preferences.getString("loads_synced_json", null)
+        android.util.Log.d("LoadsFragment", "Cache offline: ${if (cached != null) "Sim (${cached.length} bytes)" else "Não"}")
+        
         if (!cached.isNullOrBlank()) {
             try {
-                showLoads(JSONArray(cached))
+                // Tenta parsear como JSONArray
+                var loads = try {
+                    JSONArray(cached)
+                } catch (e: Exception) {
+                    android.util.Log.d("LoadsFragment", "Cache não é JSONArray, tentando JSONObject...")
+                    val obj = JSONObject(cached)
+                    android.util.Log.d("LoadsFragment", "Cache é JSONObject com chaves: ${obj.keys().asSequence().toList()}")
+                    
+                    val possibleArray = listOf("value", "results", "data", "d", "cargas", "carga", "list", "items")
+                    var foundArray: JSONArray? = null
+                    for (key in possibleArray) {
+                        val arr = obj.optJSONArray(key)
+                        if (arr != null && arr.length() > 0) {
+                            android.util.Log.d("LoadsFragment", "✅ Encontrou array em chave '$key' (cache) com ${arr.length()} itens")
+                            foundArray = arr
+                            break
+                        }
+                    }
+                    foundArray ?: JSONArray()
+                }
+                
+                android.util.Log.d("LoadsFragment", "Carregadas ${loads.length()} cargas do cache offline")
+                showLoads(loads)
                 binding?.loadsProgress?.visibility = View.GONE
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                android.util.Log.e("LoadsFragment", "Erro ao carregar cache: ${e.message}")
             }
         }
 
@@ -78,6 +103,7 @@ class LoadsFragment : Fragment() {
                 val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
                 val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 android.util.Log.d("LoadsFragment", "Response length: ${response.length} bytes")
+                android.util.Log.d("LoadsFragment", "🔍 RESPOSTA BRUTA (primeiros 500 chars): ${response.take(500)}")
                 
                 connection.disconnect()
 
@@ -85,7 +111,29 @@ class LoadsFragment : Fragment() {
                     throw Exception("Erro HTTP $responseCode: $response")
                 }
 
-                val loads = JSONArray(response)
+                // Tenta parsear como JSONArray
+                var loads = try {
+                    JSONArray(response)
+                } catch (e: Exception) {
+                    android.util.Log.e("LoadsFragment", "Erro ao parsear como JSONArray: ${e.message}")
+                    // Tenta como JSONObject e extrai array
+                    val obj = JSONObject(response)
+                    android.util.Log.d("LoadsFragment", "Resposta é JSONObject, chaves: ${obj.keys().asSequence().toList()}")
+                    
+                    // Tenta encontrar array em propriedades comuns
+                    val possibleArray = listOf("value", "results", "data", "d", "cargas", "carga", "list", "items")
+                    var foundArray: JSONArray? = null
+                    for (key in possibleArray) {
+                        val arr = obj.optJSONArray(key)
+                        if (arr != null && arr.length() > 0) {
+                            android.util.Log.d("LoadsFragment", "✅ Encontrou array em chave '$key' com ${arr.length()} itens")
+                            foundArray = arr
+                            break
+                        }
+                    }
+                    foundArray ?: JSONArray()
+                }
+                
                 android.util.Log.d("LoadsFragment", "Encontradas ${loads.length()} cargas")
                 
                 // DEBUG: Log first item to see structure
@@ -103,6 +151,7 @@ class LoadsFragment : Fragment() {
                 Handler(Looper.getMainLooper()).post {
                     if (!isAdded) return@post
                     binding?.loadsProgress?.visibility = View.GONE
+                    android.util.Log.d("LoadsFragment", "Handler post: chamando showLoads com ${loads.length()} cargas")
                     showLoads(loads)
                 }
             } catch (exception: Exception) {
