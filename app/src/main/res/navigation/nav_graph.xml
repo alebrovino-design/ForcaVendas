@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/FirstFragment">
+
+    <fragment
+        android:id="@+id/FirstFragment"
+        android:name="com.example.forcavendas.FirstFragment"
+        android:label="@string/first_fragment_label"
+        tools:layout="@layout/fragment_first">
+
+        <action
+            android:id="@+id/action_FirstFragment_to_SecondFragment"
+            app:destination="@id/SecondFragment" />
+    </fragment>
+    <fragment
+        android:id="@+id/SecondFragment"
+        android:name="com.example.forcavendas.SecondFragment"
+        android:label="@string/second_fragment_label"
+        tools:layout="@layout/fragment_second">
+
+        <action
+            android:id="@+id/action_SecondFragment_to_PlaceholderFragment"
+            app:destination="@id/PlaceholderFragment" />
+        <action
+            android:id="@+id/action_SecondFragment_to_LoadsFragment"
+            app:destination="@id/LoadsFragment" />
+        <action
+            android:id="@+id/action_SecondFragment_to_ProductsFragment"
+            app:destination="@id/ProductsFragment" />
+        <action
+            android:id="@+id/action_SecondFragment_to_SyncFragment"
+            app:destination="@id/SyncFragment" />
+        <action
+            android:id="@+id/action_SecondFragment_to_ClientsFragment"
+            app:destination="@id/ClientsFragment" />
+        <action
+            android:id="@+id/action_SecondFragment_to_OrdersFragment"
+            app:destination="@id/OrdersFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/SyncFragment"
+        android:name="com.example.forcavendas.SyncFragment"
+        android:label="Sincronização"
+        tools:layout="@layout/fragment_sync" />
+
+    <fragment
+        android:id="@+id/ProductsFragment"
+        android:name="com.example.forcavendas.ProductsFragment"
+        android:label="Produtos"
+        tools:layout="@layout/fragment_products" />
+
+    <fragment
+        android:id="@+id/ClientsFragment"
+        android:name="com.example.forcavendas.ClientsFragment"
+        android:label="Clientes"
+        tools:layout="@layout/fragment_clients">
+        <action
+            android:id="@+id/action_ClientsFragment_to_FinancialFragment"
+            app:destination="@id/FinancialFragment" />
+        <action
+            android:id="@+id/action_ClientsFragment_to_ClientProductsFragment"
+            app:destination="@id/ClientProductsFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/ClientProductsFragment"
+        android:name="com.example.forcavendas.ClientProductsFragment"
+        android:label="Produtos do cliente"
+        tools:layout="@layout/fragment_client_products">
+        <argument
+            android:name="client_id"
+            app:argType="string"
+            android:defaultValue="" />
+        <argument
+            android:name="client_name"
+            app:argType="string"
+            android:defaultValue="" />
+        <argument
+            android:name="client_region_id"
+            app:argType="string"
+            android:defaultValue="" />
+        <argument
+            android:name="edit_order_mobile_id"
+            app:argType="string"
+            android:defaultValue="" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/OrdersFragment"
+        android:name="com.example.forcavendas.OrdersFragment"
+        android:label="Pedidos"
+        tools:layout="@layout/fragment_orders" />
+
+    <fragment
+        android:id="@+id/FinancialFragment"
+        android:name="com.example.forcavendas.FinancialFragment"
+        android:label="Financeiro"
+        tools:layout="@layout/fragment_financial">
+        <argument
+            android:name="client_id"
+            app:argType="string"
+            android:defaultValue="" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/LoadsFragment"
+        android:name="com.example.forcavendas.LoadsFragment"
+        android:label="Cargas"
+        tools:layout="@layout/fragment_loads">
+        <action
+            android:id="@+id/action_LoadsFragment_to_LoadDeliveriesFragment"
+            app:destination="@id/LoadDeliveriesFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/LoadDeliveriesFragment"
+        android:name="com.example.forcavendas.LoadDeliveriesFragment"
+        android:label="Entregas da carga">
+        <argument
+            android:name="load_id"
+            app:argType="string"
+            android:defaultValue="" />
+        <argument
+            android:name="load_description"
+            app:argType="string"
+            android:defaultValue="" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/PlaceholderFragment"
+        android:name="com.example.forcavendas.PlaceholderFragment"
+        android:label="Tela"
+        tools:layout="@layout/fragment_placeholder">
+        <argument
+            android:name="screen_title"
+            app:argType="string"
+            android:defaultValue="" />
+    </fragment>
+</navigation>
