@@ -88,6 +88,13 @@ class LoadsFragment : Fragment() {
                 val loads = JSONArray(response)
                 android.util.Log.d("LoadsFragment", "Encontradas ${loads.length()} cargas")
                 
+                // DEBUG: Log first item to see structure
+                if (loads.length() > 0) {
+                    val firstLoad = loads.getJSONObject(0)
+                    android.util.Log.d("LoadsFragment", "Primeiro item: $firstLoad")
+                    android.util.Log.d("LoadsFragment", "Chaves do primeiro item: ${firstLoad.keys().asSequence().toList()}")
+                }
+                
                 preferences.edit()
                     .putString("loads_synced_json", response)
                     .putInt("loads_synced_count", loads.length())
@@ -114,6 +121,8 @@ class LoadsFragment : Fragment() {
         val list = binding?.loadsList ?: return
         list.removeAllViews()
 
+        android.util.Log.d("LoadsFragment", "showLoads chamado com ${loads.length()} cargas")
+        
         if (loads.length() == 0) {
             android.util.Log.w("LoadsFragment", "Nenhuma carga encontrada")
             binding?.loadsMessage?.visibility = View.VISIBLE
@@ -147,6 +156,7 @@ class LoadsFragment : Fragment() {
             val weight = load.optString("Peso")
 
             android.util.Log.d("LoadsFragment", "Carga: $loadId - $description ($status)")
+            android.util.Log.d("LoadsFragment", "Adicionando card para carga: $loadId (descrição: $description)")
 
             val card = MaterialCardView(requireContext()).apply {
                 layoutParams = LinearLayout.LayoutParams(
@@ -204,7 +214,10 @@ class LoadsFragment : Fragment() {
             content.addView(button)
             card.addView(content)
             list.addView(card)
+            android.util.Log.d("LoadsFragment", "✅ Card adicionado à lista para carga: $loadId")
         }
+        
+        android.util.Log.d("LoadsFragment", "✅ Total de cargas renderizadas: ${sortedLoads.size}")
     }
 
     private data class LoadField(val label: String, val value: String, val weight: Float)
