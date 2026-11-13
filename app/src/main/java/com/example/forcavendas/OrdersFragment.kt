@@ -66,15 +66,20 @@ class OrdersFragment : Fragment() {
         val erpRepository = ERPOrderLocalRepository(requireContext())
         val erpOrders = erpRepository.loadAll()
 
+        android.util.Log.d("OrdersFragment", "Rascunhos: ${drafts.size}, ERP: ${erpOrders.size}")
+
         val allOrders = (drafts + erpOrders.map { toOrderDraft(it) })
             .sortedByDescending { draft ->
                 draft.json.optJSONObject("sdtPedidoAppVenda")?.optLong("PedidoMobId", 0L) ?: 0L
             }
 
+        android.util.Log.d("OrdersFragment", "Total de pedidos: ${allOrders.size}")
+        
         list.removeAllViews()
         message.visibility = if (allOrders.isEmpty()) View.VISIBLE else View.GONE
 
         allOrders.forEach { draft ->
+            android.util.Log.d("OrdersFragment", "Renderizando pedido: ${draft.mobileId} - ${draft.clientName}")
             renderOrderCard(list, draft)
         }
     }
@@ -94,6 +99,9 @@ class OrdersFragment : Fragment() {
     }
 
     private fun renderOrderCard(list: LinearLayout, draft: OrderDraftService.Draft) {
+        android.util.Log.d("OrdersFragment", "renderOrderCard chamado: mobile=${draft.mobileId}, erp=${draft.erpId}")
+        android.util.Log.d("OrdersFragment", "JSON: ${draft.json}")
+        
         val card = MaterialCardView(requireContext()).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -111,6 +119,20 @@ class OrdersFragment : Fragment() {
         }
 
         val order = draft.json.optJSONObject("sdtPedidoAppVenda")
+        android.util.Log.d("OrdersFragment", "Order object null? ${order == null}")
+        if (order != null) {
+            try {
+                val keys = mutableListOf<String>()
+                val iter = order.keys()
+                while (iter.hasNext()) {
+                    keys.add(iter.next())
+                }
+                android.util.Log.d("OrdersFragment", "Order keys: $keys")
+            } catch (e: Exception) {
+                android.util.Log.d("OrdersFragment", "Erro ao listar chaves: ${e.message}")
+            }
+        }
+        
         val isErp = draft.erpId > 0L
         val displayedOrderTotal = calculateOrderTotalWithIpi(order, draft.total)
 
@@ -214,7 +236,18 @@ class OrdersFragment : Fragment() {
             }
 
             row1.addView(createActionButton("✏️ Editar", "Editar este pedido") {
-                Toast.makeText(requireContext(), "Editar pedido ${draft.mobileId}", Toast.LENGTH_SHORT).show()
+                try {
+                    // TODO: Implementar navegação para tela de edição
+                    val bundle = bundleOf("pedidoId" to draft.mobileId, "pedidoJson" to draft.json.toString())
+                    android.util.Log.d("OrdersFragment", "Navegar para edição do pedido ${draft.mobileId}")
+                    Toast.makeText(requireContext(), "Editando pedido ${draft.mobileId}", Toast.LENGTH_SHORT).show()
+                    
+                    // Se quiser navegar, descomente e ajuste a action:
+                    // findNavController().navigate(R.id.action_orders_to_edit, bundle)
+                } catch (e: Exception) {
+                    android.util.Log.e("OrdersFragment", "Erro ao editar", e)
+                    Toast.makeText(requireContext(), "Erro: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             })
 
             row1.addView(createActionButton("🗑️ Remover", "Remover este pedido") {
@@ -505,6 +538,8 @@ class OrdersFragment : Fragment() {
 
     private fun generateOrderPdf(draft: OrderDraftService.Draft) {
         try {
+            android.util.Log.d("OrdersFragment", "Gerando PDF para pedido ${draft.mobileId}")
+            
             val pdfDocument = PdfDocument()
             val pageInfo = PdfDocument.PageInfo.Builder(210, 297, 1).create()
             val page = pdfDocument.startPage(pageInfo)
@@ -521,14 +556,18 @@ class OrdersFragment : Fragment() {
             pdfDocument.writeTo(FileOutputStream(file))
             pdfDocument.close()
 
+            android.util.Log.d("OrdersFragment", "PDF criado: ${file.absolutePath}")
             openPdf(file)
         } catch (e: Exception) {
+            android.util.Log.e("OrdersFragment", "Erro ao gerar PDF", e)
             Toast.makeText(requireContext(), "Erro ao gerar PDF: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun generateOrderJson(draft: OrderDraftService.Draft) {
         try {
+            android.util.Log.d("OrdersFragment", "Compartilhando JSON para pedido ${draft.mobileId}")
+            
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, draft.json.toString(2))
@@ -536,23 +575,27 @@ class OrdersFragment : Fragment() {
             }
             startActivity(Intent.createChooser(intent, "Compartilhar JSON"))
         } catch (e: Exception) {
+            android.util.Log.e("OrdersFragment", "Erro ao compartilhar JSON", e)
             Toast.makeText(requireContext(), "Erro ao gerar JSON: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun openPdf(file: File) {
-        val uri = FileProvider.getUriForFile(
-            requireContext(),
-            "${requireContext().packageName}.fileprovider",
-            file
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/pdf")
-            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-        }
         try {
+            android.util.Log.d("OrdersFragment", "Abrindo PDF: ${file.absolutePath}")
+            
+            val uri = FileProvider.getUriForFile(
+                requireContext(),
+                "${requireContext().packageName}.fileprovider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/pdf")
+                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
             startActivity(intent)
         } catch (e: Exception) {
+            android.util.Log.e("OrdersFragment", "Erro ao abrir PDF", e)
             Toast.makeText(requireContext(), "Nenhum leitor de PDF disponível", Toast.LENGTH_SHORT).show()
         }
     }

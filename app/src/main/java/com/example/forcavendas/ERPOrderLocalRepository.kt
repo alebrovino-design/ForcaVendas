@@ -63,24 +63,45 @@ class ERPOrderLocalRepository(context: Context) {
         val db = database.writableDatabase
         db.beginTransaction()
         try {
+            android.util.Log.d("ERPOrderRepository", "Salvando ${orders.length()} pedidos")
+            
             for (index in 0 until orders.length()) {
                 val item = orders.getJSONObject(index)
+                
+                // Debug: print primeiro pedido
+                if (index == 0) {
+                    android.util.Log.d("ERPOrderRepository", "Primeiro pedido: ${item.toString()}")
+                }
+                
                 val mobileId = item.optLong("PedidoMobId", 0L)
                 val erpId = item.optLong("PedidoERPId", 0L)
 
-                if (mobileId == 0L || erpId == 0L) continue
+                if (mobileId == 0L || erpId == 0L) {
+                    android.util.Log.w("ERPOrderRepository", "Pulando pedido sem IDs válidos: mobileId=$mobileId, erpId=$erpId")
+                    continue
+                }
+
+                val clientId = item.optString("PedidoEntidadeId", "")
+                val clientName = item.optString("PedidoEntidadeNome", "").ifBlank {
+                    item.optString("PedidoEntidadeNomeFantasia", "")
+                }
+                val regionId = item.optString("PedidoEntidadeRegiaoid", "")
+                val status = item.optString("PedidoStatus", "Processado")
+                val total = item.optDouble("PedidoVlrTotal", 0.0)
+                val emissionDate = item.optString("PedidoDtEmissao", "")
+
+                android.util.Log.d("ERPOrderRepository", 
+                    "Pedido $erpId: $clientName (R$ $total)")
 
                 val values = ContentValues().apply {
                     put("mobile_id", mobileId)
                     put("erp_id", erpId)
-                    put("client_id", item.optString("PedidoEntidadeId"))
-                    put("client_name", item.optString("PedidoEntidadeNome").ifBlank {
-                        item.optString("PedidoEntidadeNomeFantasia")
-                    })
-                    put("region_id", item.optString("PedidoEntidadeRegiaoid"))
-                    put("status", item.optString("PedidoStatus"))
-                    put("total", item.optDouble("PedidoVlrTotal", 0.0))
-                    put("emission_date", item.optString("PedidoDtEmissao"))
+                    put("client_id", clientId)
+                    put("client_name", clientName)
+                    put("region_id", regionId)
+                    put("status", status)
+                    put("total", total)
+                    put("emission_date", emissionDate)
                     put("json_data", JSONObject().apply {
                         put("sdtPedidoAppVenda", item)
                     }.toString())
@@ -95,8 +116,11 @@ class ERPOrderLocalRepository(context: Context) {
                 )
             }
 
+            android.util.Log.d("ERPOrderRepository", "Transação bem-sucedida")
             updateSyncMetadata(db, representanteId, orders.length())
             db.setTransactionSuccessful()
+        } catch (e: Exception) {
+            android.util.Log.e("ERPOrderRepository", "Erro ao salvar pedidos", e)
         } finally {
             db.endTransaction()
         }
