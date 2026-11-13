@@ -36,6 +36,7 @@ class LoadsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         binding?.loadsBack?.setOnClickListener { findNavController().navigateUp() }
         loadLoads()
+        synchronizeDeliveries()
     }
 
     private fun loadLoads() {
@@ -114,6 +115,43 @@ class LoadsFragment : Fragment() {
                     binding?.loadsMessage?.visibility = View.VISIBLE
                     binding?.loadsMessage?.text = "Não foi possível consultar as cargas."
                 }
+            }
+        }
+    }
+
+    private fun synchronizeDeliveries() {
+        thread {
+            try {
+                val preferences = requireContext().getSharedPreferences("forca_vendas", 0)
+                val userId = preferences.getString("user_id", "").orEmpty()
+                if (userId.isBlank()) return@thread
+
+                val token = ERPConfig.getERPToken(requireContext())
+                val endpoint = "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpEntregaCargaRepAPPVenda" +
+                    "?Parametrostegaceptoken=${URLEncoder.encode(token, "UTF-8")}" +
+                    "&Usuarioid=${URLEncoder.encode(userId, "UTF-8")}"
+
+                val connection = URL(endpoint).openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Accept", "application/json")
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.connectTimeout = 15_000
+                connection.readTimeout = 15_000
+
+                val responseCode = connection.responseCode
+                val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                connection.disconnect()
+
+                if (responseCode in 200..299) {
+                    preferences.edit()
+                        .putString("deliveries_synced_json_$userId", response)
+                        .putLong("deliveries_synced_at_$userId", System.currentTimeMillis())
+                        .apply()
+                    Log.d("LoadsFragment", "Entregas sincronizadas com sucesso")
+                }
+            } catch (exception: Exception) {
+                Log.e("LoadsFragment", "Erro ao sincronizar entregas em background", exception)
             }
         }
     }
