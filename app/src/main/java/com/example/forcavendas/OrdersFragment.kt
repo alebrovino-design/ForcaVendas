@@ -291,12 +291,25 @@ class OrdersFragment : Fragment() {
 
     private fun createStatusBadge(isErp: Boolean): MaterialCardView {
         return MaterialCardView(requireContext()).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(28)
+            ).apply { rightMargin = dp(8) }
             radius = dp(4).toFloat()
             setCardBackgroundColor(
                 if (isErp) Color.parseColor("#4CAF50")  // Green for ERP
                 else Color.parseColor("#FF9800")         // Orange for Draft
             )
+            elevation = dp(2).toFloat()
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            
+            val statusText = TextView(requireContext()).apply {
+                text = if (isErp) "ERP" else "RASCUNHO"
+                textSize = 11f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+            }
+            addView(statusText)
         }
     }
 
