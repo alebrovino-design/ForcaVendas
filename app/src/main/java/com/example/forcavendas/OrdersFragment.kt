@@ -51,7 +51,6 @@ class OrdersFragment : Fragment() {
         binding?.ordersSync?.setOnClickListener { sincronizarPedidosPendentes() }
         binding?.ordersRefresh?.setOnClickListener { baixarPedidosDoERP() }
         renderOrders()
-        baixarPedidosDoERP()
     }
 
     override fun onResume() {
@@ -100,18 +99,13 @@ class OrdersFragment : Fragment() {
     }
 
     private fun renderOrderCard(list: LinearLayout, draft: OrderDraftService.Draft) {
-        android.util.Log.d("OrdersFragment", "renderOrderCard chamado: mobile=${draft.mobileId}, erp=${draft.erpId}")
-        android.util.Log.d("OrdersFragment", "JSON: ${draft.json}")
-        
         val card = MaterialCardView(requireContext()).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(16) }
             radius = dp(12).toFloat()
-            elevation = dp(4).toFloat()
             setCardBackgroundColor(resources.getColor(R.color.login_field, requireContext().theme))
-            cardElevation = 8f
         }
         
         val content = LinearLayout(requireContext()).apply {
@@ -120,79 +114,48 @@ class OrdersFragment : Fragment() {
         }
 
         val order = draft.json.optJSONObject("sdtPedidoAppVenda")
-        android.util.Log.d("OrdersFragment", "Order object null? ${order == null}")
-        if (order != null) {
-            try {
-                val keys = mutableListOf<String>()
-                val iter = order.keys()
-                while (iter.hasNext()) {
-                    keys.add(iter.next())
-                }
-                android.util.Log.d("OrdersFragment", "Order keys: $keys")
-            } catch (e: Exception) {
-                android.util.Log.d("OrdersFragment", "Erro ao listar chaves: ${e.message}")
-            }
-        }
-        
         val isErp = draft.erpId > 0L
         val displayedOrderTotal = calculateOrderTotalWithIpi(order, draft.total)
+        val weight = calculateOrderWeight(draft)
 
-        // ===== HEADER: Status Badge + Client Name =====
-        val headerContainer = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
+        // Cliente nome (title)
+        content.addView(TextView(requireContext()).apply {
+            text = draft.clientName.ifBlank { "Cliente ${draft.clientId}" }
+            textSize = 16f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(android.graphics.Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(12) }
-        }
-
-        // Status badge
-        val statusBadge = createStatusBadge(isErp)
-        headerContainer.addView(statusBadge)
-
-        // Client name
-        headerContainer.addView(TextView(requireContext()).apply {
-            text = draft.clientName.ifBlank { "Cliente ${draft.clientId}" }
-            textSize = 16f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(resources.getColor(android.R.color.white, requireContext().theme))
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                weight = 1f
-                leftMargin = dp(12)
-            }
         })
 
-        content.addView(headerContainer)
-
-        // ===== ORDER IDs =====
-        val idsRow = LinearLayout(requireContext()).apply {
+        // Row 1: Código Móvel | Código ERP | Status
+        val row1 = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(8) }
         }
-        idsRow.addView(createIdField("Móvel", draft.mobileId.toString(), "📱"))
-        idsRow.addView(createIdField("ERP", if (isErp) draft.erpId.toString() else "-", "🔗"))
-        content.addView(idsRow)
+        row1.addView(createFieldColumn("Código Móvel", draft.mobileId.toString()))
+        row1.addView(createFieldColumn("Código ERP", if (isErp) draft.erpId.toString() else "-"))
+        row1.addView(createFieldColumn("Status", if (isErp) "ERP" else "RASCUNHO"))
+        content.addView(row1)
 
-        // ===== FINANCIAL INFO =====
-        val financialRow = LinearLayout(requireContext()).apply {
+        // Row 2: Valor do pedido | Peso do pedido
+        val row2 = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(8) }
         }
-        val weight = calculateOrderWeight(draft)
-        financialRow.addView(createFinancialField("Valor", formatCurrency(displayedOrderTotal), "💰"))
-        financialRow.addView(createFinancialField("Peso", formatWeight(weight), "⚖️"))
-        content.addView(financialRow)
+        row2.addView(createFieldColumn("Valor do pedido", formatCurrency(displayedOrderTotal)))
+        row2.addView(createFieldColumn("Peso do pedido", formatWeight(weight)))
+        content.addView(row2)
 
-        // ===== PAYMENT TERMS =====
+        // Condição de pagamento
         val paymentDescription = order?.optString("PedidoCondicaoPgtoDescricao")?.trim().orEmpty()
         val paymentId = order?.optInt("PedidoCondicaoPgtoId", 0) ?: 0
         val paymentText = when {
@@ -201,23 +164,73 @@ class OrdersFragment : Fragment() {
             paymentId > 0 -> "Condição $paymentId"
             else -> "-"
         }
-        content.addView(createInfoField("Pagamento", paymentText, "📋"))
-
-        // ===== METADATA ROW =====
-        val metadataRow = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
+        content.addView(TextView(requireContext()).apply {
+            text = "Condição de pagamento\n$paymentText"
+            textSize = 12f
+            setTextColor(resources.getColor(R.color.text_secondary, requireContext().theme))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(12) }
-        }
-        val regionText = if (draft.regionId.isNotBlank()) draft.regionId else "-"
-        val dateText = formatCardDate(draft.createdAt)
-        metadataRow.addView(createMetadataField("Região", regionText, "🗺️"))
-        metadataRow.addView(createMetadataField("Data", dateText, "📅"))
-        content.addView(metadataRow)
+            ).apply { bottomMargin = dp(8) }
+        })
 
-        // ===== ACTION BUTTONS (2 ROWS for better visibility) =====
+        // Parcelamento
+        val conditionDays = order?.optString("PedidoCondicaoPgtoDias").orEmpty()
+        if (conditionDays.isNotBlank() && !conditionDays.contains("-") && displayedOrderTotal > 0) {
+            val daysParts = conditionDays.split("/").mapNotNull { it.trim().toIntOrNull() }
+            if (daysParts.isNotEmpty()) {
+                val installmentCount = daysParts.size
+                val installmentAmount = displayedOrderTotal / installmentCount
+                
+                val parcText = StringBuilder("${installmentCount} Parcelas / Prazo Médio ${daysParts.average().toInt()} Dias\n")
+                for ((index, days) in daysParts.withIndex()) {
+                    val installmentNum = index + 1
+                    val installmentDate = formatInstallmentDate(days)
+                    parcText.append("$installmentNum° R\$ ${formatCurrency(installmentAmount).removePrefix("R\$ ")} - $installmentDate")
+                    if (index < daysParts.size - 1) parcText.append("\n")
+                }
+                
+                content.addView(TextView(requireContext()).apply {
+                    text = parcText.toString()
+                    textSize = 12f
+                    setTextColor(resources.getColor(R.color.text_secondary, requireContext().theme))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dp(8) }
+                })
+            }
+        }
+
+        // Itens do pedido
+        val products = order?.optJSONArray("PedidoProdutos")
+        if (products != null && products.length() > 0) {
+            val itemsText = StringBuilder()
+            for (i in 0 until minOf(products.length(), 2)) {
+                val product = products.optJSONObject(i) ?: continue
+                val productCode = product.optString("ProdutoCodigo", "")
+                val productName = product.optString("ProdutoNome", "")
+                val consumerName = product.optString("ConsumidorNome", "")
+                if (i > 0) itemsText.append("\n")
+                itemsText.append("$i - $productCode - $productName")
+                if (consumerName.isNotBlank()) itemsText.append("\n       $consumerName")
+            }
+            if (products.length() > 2) {
+                itemsText.append("\n... +${products.length() - 2} itens")
+            }
+            
+            content.addView(TextView(requireContext()).apply {
+                text = itemsText.toString()
+                textSize = 12f
+                setTextColor(resources.getColor(R.color.text_secondary, requireContext().theme))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(12) }
+            })
+        }
+
+        // Botões
         val buttonsContainer = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -226,17 +239,22 @@ class OrdersFragment : Fragment() {
             )
         }
 
-        // Row 1: Remover (if editable)
         if (!isErp) {
-            val row1 = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(48)
-                ).apply { bottomMargin = dp(8) }
-            }
+            buttonsContainer.addView(createFullButton("Alterar pedido") {
+                Toast.makeText(requireContext(), "Edição de pedido em desenvolvimento", Toast.LENGTH_SHORT).show()
+            })
+        }
 
-            row1.addView(createActionButton("🗑️ Remover", "Remover este pedido") {
+        buttonsContainer.addView(createFullButton("Gerar PDF do pedido") {
+            generateOrderPdf(draft)
+        })
+
+        buttonsContainer.addView(createFullButton("Gerar JSON do pedido") {
+            generateOrderJson(draft)
+        })
+
+        if (!isErp) {
+            buttonsContainer.addView(createFullButton("🗑️ Remover pedido", isRed = true) {
                 AlertDialog.Builder(requireContext())
                     .setTitle("Confirmar remoção")
                     .setMessage("Remover pedido ${draft.mobileId}?")
@@ -246,41 +264,65 @@ class OrdersFragment : Fragment() {
                     }
                     .setNegativeButton("Cancelar", null)
                     .show()
-            }.apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
-                    .apply { marginEnd = dp(8) }
             })
-
-            buttonsContainer.addView(row1)
         }
 
-        // Row 2: PDF + JSON (available for all)
-        val row2 = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(48)
-            )
-        }
-
-        row2.addView(createActionButton("📄 PDF", "Exportar como PDF") {
-            generateOrderPdf(draft)
-        }.apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
-                .apply { marginEnd = dp(8) }
-        })
-
-        row2.addView(createActionButton("📦 JSON", "Compartilhar JSON") {
-            generateOrderJson(draft)
-        }.apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
-        })
-
-        buttonsContainer.addView(row2)
         content.addView(buttonsContainer)
-
         card.addView(content)
         list.addView(card)
+    }
+
+    private fun createFieldColumn(label: String, value: String): View {
+        return LinearLayout(requireContext()).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { marginEnd = dp(6) }
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(requireContext()).apply {
+                text = label
+                textSize = 11f
+                setTextColor(resources.getColor(R.color.text_secondary, requireContext().theme))
+            })
+            addView(TextView(requireContext()).apply {
+                text = value.ifBlank { "-" }
+                textSize = 12f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(android.graphics.Color.WHITE)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(2) }
+            })
+        }
+    }
+
+    private fun createFullButton(text: String, isRed: Boolean = false, onClick: () -> Unit): View {
+        return com.google.android.material.button.MaterialButton(requireContext()).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(44)
+            ).apply { bottomMargin = dp(8) }
+            setText(text)
+            isAllCaps = false
+            textSize = 13f
+            setTextColor(android.graphics.Color.WHITE)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(
+                if (isRed) resources.getColor(R.color.financial_red, requireContext().theme)
+                else resources.getColor(R.color.button_light_blue, requireContext().theme)
+            )
+            cornerRadius = dp(8)
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun formatInstallmentDate(days: Int): String {
+        return try {
+            val calendar = java.util.Calendar.getInstance()
+            calendar.add(java.util.Calendar.DAY_OF_MONTH, days)
+            val dateFormat = java.text.SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR"))
+            dateFormat.format(calendar.time)
+        } catch (_: Exception) {
+            ""
+        }
     }
 
     private fun createStatusBadge(isErp: Boolean): MaterialCardView {
