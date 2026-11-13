@@ -4,6 +4,7 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -22,8 +23,6 @@ import kotlin.concurrent.thread
 
 class LoadDeliveriesFragment : Fragment() {
     private var binding: FragmentLoadDeliveriesBinding? = null
-    private val token =
-        "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val viewBinding = FragmentLoadDeliveriesBinding.inflate(inflater, container, false)
@@ -62,22 +61,39 @@ class LoadDeliveriesFragment : Fragment() {
                 val userId = preferences.getString("user_id", "").orEmpty()
                 if (userId.isBlank()) throw IllegalStateException("Usuário não informado")
 
+                val token = ERPConfig.getERPToken(requireContext())
+                
+                Log.d("LoadDeliveriesFragment", "Buscando entregas para usuário: $userId")
+                Log.d("LoadDeliveriesFragment", "Token: ${token.take(20)}...")
+
                 val endpoint =
                     "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpEntregaCargaRepAPPVenda" +
                         "?Parametrostegaceptoken=${URLEncoder.encode(token, "UTF-8")}" +
-                        "&Usuarioid=${URLEncoder.encode(userId, "UTF-8")}"
+                        "&Representanteid=${URLEncoder.encode(userId, "UTF-8")}"
+                
+                Log.d("LoadDeliveriesFragment", "Conectando a: https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpEntregaCargaRepAPPVenda")
+                
                 val connection = URL(endpoint).openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Accept", "application/json")
+                connection.setRequestProperty("Content-Type", "application/json")
                 connection.connectTimeout = 15_000
                 connection.readTimeout = 15_000
+                
                 val responseCode = connection.responseCode
+                Log.d("LoadDeliveriesFragment", "HTTP Response Code: $responseCode")
+                
                 val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
                 val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                Log.d("LoadDeliveriesFragment", "Response length: ${response.length} bytes")
+                
                 connection.disconnect()
-                if (responseCode !in 200..299) throw IllegalStateException("Erro HTTP $responseCode")
+                
+                if (responseCode !in 200..299) throw IllegalStateException("Erro HTTP $responseCode: $response")
 
                 val deliveries = JSONArray(response)
+                Log.d("LoadDeliveriesFragment", "Encontradas ${deliveries.length()} entregas")
+                
                 preferences.edit()
                     .putString("deliveries_synced_json_$userId", response)
                     .putInt("deliveries_synced_count_$userId", deliveries.length())
@@ -91,12 +107,13 @@ class LoadDeliveriesFragment : Fragment() {
                     showDeliveries(deliveries, loadId)
                 }
             } catch (exception: Exception) {
+                Log.e("LoadDeliveriesFragment", "Erro ao sincronizar entregas", exception)
                 Handler(Looper.getMainLooper()).post {
                     if (!isAdded) return@post
                     binding?.deliveriesProgress?.visibility = View.GONE
                     binding?.deliveriesSyncButton?.isEnabled = true
                     binding?.deliveriesMessage?.text =
-                        "Falha ao sincronizar. Usando dados offline quando disponíveis."
+                        "Falha ao sincronizar: ${exception.message}"
                 }
             }
         }

@@ -53,25 +53,41 @@ class LoadsFragment : Fragment() {
         thread {
             try {
                 val userId = preferences.getString("user_id", "") ?: ""
-                val token = "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+                // Usar o token centralizado do ERPConfig
+                val token = ERPConfig.getERPToken(requireContext())
+                
+                android.util.Log.d("LoadsFragment", "Buscando cargas para usuário: $userId")
+                android.util.Log.d("LoadsFragment", "Token: ${token.take(20)}...")
+                
                 val endpoint = "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpCargaRepresentanteAppVenda" +
                     "?Parametrostegaceptoken=${URLEncoder.encode(token, "UTF-8")}" +
-                    "&Usuarioid=${URLEncoder.encode(userId, "UTF-8")}"
+                    "&Representanteid=${URLEncoder.encode(userId, "UTF-8")}"
+                
+                android.util.Log.d("LoadsFragment", "Conectando a: https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpCargaRepresentanteAppVenda")
+                
                 val connection = URL(endpoint).openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 15_000
                 connection.readTimeout = 15_000
+                connection.setRequestProperty("Accept", "application/json")
+                connection.setRequestProperty("Content-Type", "application/json")
 
                 val responseCode = connection.responseCode
+                android.util.Log.d("LoadsFragment", "HTTP Response Code: $responseCode")
+                
                 val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
                 val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                android.util.Log.d("LoadsFragment", "Response length: ${response.length} bytes")
+                
                 connection.disconnect()
 
                 if (responseCode !in 200..299) {
-                    throw Exception("Erro HTTP $responseCode")
+                    throw Exception("Erro HTTP $responseCode: $response")
                 }
 
                 val loads = JSONArray(response)
+                android.util.Log.d("LoadsFragment", "Encontradas ${loads.length()} cargas")
+                
                 preferences.edit()
                     .putString("loads_synced_json", response)
                     .putInt("loads_synced_count", loads.length())
@@ -83,11 +99,12 @@ class LoadsFragment : Fragment() {
                     showLoads(loads)
                 }
             } catch (exception: Exception) {
+                android.util.Log.e("LoadsFragment", "Erro ao buscar cargas", exception)
                 Handler(Looper.getMainLooper()).post {
                     if (!isAdded) return@post
                     binding?.loadsProgress?.visibility = View.GONE
                     binding?.loadsMessage?.visibility = View.VISIBLE
-                    binding?.loadsMessage?.text = "Não foi possível consultar as cargas."
+                    binding?.loadsMessage?.text = "Erro: ${exception.message}"
                 }
             }
         }
@@ -98,10 +115,13 @@ class LoadsFragment : Fragment() {
         list.removeAllViews()
 
         if (loads.length() == 0) {
+            android.util.Log.w("LoadsFragment", "Nenhuma carga encontrada")
             binding?.loadsMessage?.visibility = View.VISIBLE
             binding?.loadsMessage?.text = "Nenhuma carga encontrada."
             return
         }
+
+        android.util.Log.d("LoadsFragment", "Renderizando ${loads.length()} cargas")
 
         val sortedLoads = mutableListOf<JSONObject>()
         for (index in 0 until loads.length()) {
@@ -125,6 +145,8 @@ class LoadsFragment : Fragment() {
             val forecastDate = formatDate(load.optString("CargaDtPrevisao"))
             val billingDate = formatDate(load.optString("CargaDtFaturamento"))
             val weight = load.optString("Peso")
+
+            android.util.Log.d("LoadsFragment", "Carga: $loadId - $description ($status)")
 
             val card = MaterialCardView(requireContext()).apply {
                 layoutParams = LinearLayout.LayoutParams(
