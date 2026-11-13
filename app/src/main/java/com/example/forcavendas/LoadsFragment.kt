@@ -51,11 +51,10 @@ class LoadsFragment : Fragment() {
                     val obj = JSONObject(cached)
                     obj.optJSONArray("value") ?: obj.optJSONArray("d") ?: obj.optJSONArray("results") ?: JSONArray()
                 }
-                android.widget.Toast.makeText(requireContext(), "Cache: ${loads.length()} cargas", android.widget.Toast.LENGTH_SHORT).show()
                 showLoads(loads)
                 binding?.loadsProgress?.visibility = View.GONE
             } catch (e: Exception) {
-                android.widget.Toast.makeText(requireContext(), "Erro no cache: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                Log.e("LoadsFragment", "Erro no cache", e)
             }
         }
 
@@ -65,7 +64,7 @@ class LoadsFragment : Fragment() {
                 val token = ERPConfig.getERPToken(requireContext())
                 val endpoint = "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpCargaRepresentanteAppVenda" +
                     "?Parametrostegaceptoken=${URLEncoder.encode(token, "UTF-8")}" +
-                    "&Representanteid=${URLEncoder.encode(userId, "UTF-8")}"
+                    "&Usuarioid=${URLEncoder.encode(userId, "UTF-8")}"
                 val connection = URL(endpoint).openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 15_000
@@ -83,40 +82,26 @@ class LoadsFragment : Fragment() {
                 val loads = try {
                     JSONArray(response)
                 } catch (e: Exception) {
-                    // Try to extract array from object
-                    val obj = JSONObject(response)
-                    val allKeys = obj.keys().asSequence().toList()
-                    
-                    var found = obj.optJSONArray("value")
-                    if (found == null) found = obj.optJSONArray("d")
-                    if (found == null) found = obj.optJSONArray("results")
-                    if (found == null) found = obj.optJSONArray("cargas")
-                    if (found == null) found = obj.optJSONArray("data")
-                    
-                    android.widget.Toast.makeText(
-                        requireContext(),
-                        "Estrutura: $allKeys - Encontrou: ${found?.length() ?: "NADA"}",
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
-                    
-                    found ?: JSONArray()
-                }
-                
-                Handler(Looper.getMainLooper()).post {
-                    if (isAdded) {
-                        android.widget.Toast.makeText(
-                            requireContext(),
-                            "Cargas recebidas: ${loads.length()}",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
+                    try {
+                        val obj = JSONObject(response)
+                        obj.optJSONArray("value") ?: obj.optJSONArray("d") ?: obj.optJSONArray("results") ?: JSONArray()
+                    } catch (e2: Exception) {
+                        // Se não for nem array nem objeto, pode estar dentro de um wrapper
+                        // Tenta procurar por [ no texto
+                        val startIdx = response.indexOf('[')
+                        val endIdx = response.lastIndexOf(']')
+                        if (startIdx >= 0 && endIdx > startIdx) {
+                            val jsonPart = response.substring(startIdx, endIdx + 1)
+                            try {
+                                JSONArray(jsonPart)
+                            } catch (e3: Exception) {
+                                JSONArray()
+                            }
+                        } else {
+                            JSONArray()
+                        }
                     }
                 }
-                
-                preferences.edit()
-                    .putString("loads_synced_json", response)
-                    .putInt("loads_synced_count", loads.length())
-                    .putLong("loads_synced_at", System.currentTimeMillis())
-                    .apply()
                 Handler(Looper.getMainLooper()).post {
                     if (!isAdded) return@post
                     binding?.loadsProgress?.visibility = View.GONE
@@ -140,11 +125,8 @@ class LoadsFragment : Fragment() {
         if (loads.length() == 0) {
             binding?.loadsMessage?.visibility = View.VISIBLE
             binding?.loadsMessage?.text = "Nenhuma carga encontrada."
-            android.widget.Toast.makeText(requireContext(), "showLoads chamado com 0 cargas!", android.widget.Toast.LENGTH_LONG).show()
             return
         }
-
-        android.widget.Toast.makeText(requireContext(), "Renderizando ${loads.length()} cargas", android.widget.Toast.LENGTH_SHORT).show()
 
         val sortedLoads = mutableListOf<JSONObject>()
         for (index in 0 until loads.length()) {
