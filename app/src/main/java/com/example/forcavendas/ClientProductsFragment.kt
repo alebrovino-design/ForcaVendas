@@ -392,6 +392,17 @@ class ClientProductsFragment : Fragment() {
                         "Base ${formatQuantity(limit.bonusPercent)}% + tolerância ${formatQuantity(limit.extraPercent)}%"
                 }
                 quantities.addView(bonusInfoText)
+            } else {
+                val noBonusText = TextView(requireContext()).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = dp(8) }
+                    textSize = 12f
+                    setTextColor(resources.getColor(R.color.text_secondary, requireContext().theme))
+                    text = "ℹ️ Sem bonificação configurada para esta região/grupo"
+                }
+                quantities.addView(noBonusText)
             }
             
             content.addView(quantities)
