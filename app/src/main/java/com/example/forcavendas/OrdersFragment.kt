@@ -134,7 +134,7 @@ class OrdersFragment : Fragment() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(8) }
         }
-        row1.addView(createFieldColumn("Código Móvel", draft.mobileId.toString()))
+        row1.addView(createFieldColumn("Código Móvel", draft.mobileId.takeIf { it > 0L }?.toString() ?: "-"))
         row1.addView(createFieldColumn("Código ERP", if (isErp) draft.erpId.toString() else "-"))
         row1.addView(createFieldColumn("Status", status))
         content.addView(row1)
@@ -167,23 +167,22 @@ class OrdersFragment : Fragment() {
         })
 
         val installments = order?.let { orderItems(it, "PedidoParcelas", "PedidoParcelamento") }
-            ?: JSONArray()
+            ?.let(::uniqueInstallments)
+            .orEmpty()
         val conditionDays = paymentText.substringAfter("-", "")
             .split("/")
             .mapNotNull { Regex("\\d+").find(it)?.value?.toIntOrNull() }
-        if (installments.length() > 0 || conditionDays.isNotEmpty()) {
-            val days = (0 until installments.length()).mapNotNull { index ->
-                installments.optJSONObject(index)?.let { jsonNumber(it, "PedidoParcelaDias")?.toInt() }
-            }.ifEmpty { conditionDays }
+        if (installments.isNotEmpty() || conditionDays.isNotEmpty()) {
+            val days = installments.mapNotNull { jsonNumber(it, "PedidoParcelaDias")?.toInt() }
+                .ifEmpty { conditionDays }
             val averageTerm = order?.optInt("PedidoCondicaoPgtoPrazoMedio", 0)
                 ?.takeIf { it > 0 } ?: days.takeIf { it.isNotEmpty() }?.average()?.toInt() ?: 0
-            val installmentCount = if (installments.length() > 0) installments.length() else days.size
+            val installmentCount = if (installments.isNotEmpty()) installments.size else days.size
             val installmentSummary =
                 "$installmentCount Parcelas / Prazo Médio $averageTerm Dias"
             val installmentLines = mutableListOf(installmentSummary)
-            if (installments.length() > 0) {
-                for (index in 0 until installments.length()) {
-                    val installment = installments.optJSONObject(index) ?: continue
+            if (installments.isNotEmpty()) {
+                for ((index, installment) in installments.withIndex()) {
                     val number = installment.optInt("PedidoParcelaNro", index + 1)
                     val amount = jsonNumber(installment, "PedidoParcelaVlr") ?: 0.0
                     val rawDueDate = firstValue(
@@ -512,6 +511,28 @@ class OrdersFragment : Fragment() {
         return null
     }
 
+    private fun uniqueInstallments(installments: JSONArray): List<JSONObject> {
+        val seen = mutableSetOf<String>()
+        return (0 until installments.length())
+            .mapNotNull { installments.optJSONObject(it) }
+            .filter { installment ->
+                val number = installment.optInt("PedidoParcelaNro", 0)
+                val key = if (number > 0) {
+                    "number:$number"
+                } else {
+                    val dueDate = firstValue(
+                        installment,
+                        "PedidoParcelaDtVencimento",
+                        "PedidoParcelaDataVencimento"
+                    )
+                    val amount = jsonNumber(installment, "PedidoParcelaVlr")
+                    val days = jsonNumber(installment, "PedidoParcelaDias")
+                    "details:$dueDate|$amount|$days"
+                }
+                seen.add(key)
+            }
+    }
+
     private fun formatCurrency(value: Double): String {
         val formatter = NumberFormat.getCurrencyInstance(Locale("pt", "BR"))
         return formatter.format(value)
@@ -685,8 +706,8 @@ class OrdersFragment : Fragment() {
             }
 
             pdfDocument = PdfDocument()
-            val pageWidth = 720
-            val pageHeight = 760
+            val pageWidth = 595
+            val pageHeight = 842
             val tableBottomReserve = 150f
             val rowHeight = 27f
             var pageNumber = 0
@@ -713,7 +734,7 @@ class OrdersFragment : Fragment() {
                 color = Color.WHITE
                 textSize = 12f
             }
-            val columns = floatArrayOf(3f, 55f, 325f, 391f, 471f, 551f, 627f, 717f)
+            val columns = floatArrayOf(24f, 56f, 250f, 292f, 358f, 424f, 490f, 571f)
             var activeTableTitle: String? = null
 
             fun drawRightAlignedText(text: String, right: Float, baseline: Float, paint: Paint) {
@@ -750,17 +771,15 @@ class OrdersFragment : Fragment() {
 
             fun drawColumnHeader(title: String) {
                 val top = y
-                val height = if (title == "Bonificação") 42f else 28f
-                canvas!!.drawRect(0f, top, pageWidth.toFloat(), top + height, Paint().apply { color = dark })
+                val height = 42f
+                canvas!!.drawRect(columns.first(), top, columns.last(), top + height, Paint().apply { color = dark })
                 val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = Color.WHITE
                     textSize = 12f
                     typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 }
-                if (title == "Bonificação") {
-                    canvas!!.drawText(title, 5f, top + 14f, headerPaint)
-                }
-                val baseline = top + if (title == "Bonificação") 34f else 18f
+                canvas!!.drawText(title, columns.first() + 4f, top + 14f, headerPaint)
+                val baseline = top + 34f
                 val labels = listOf("Num.", "ItemProduto", "Qtde.", "Vlr. Item", "Total", "Peso Un", "Tot. Kg")
                 for (index in labels.indices) {
                     val left = columns[index]
@@ -783,11 +802,11 @@ class OrdersFragment : Fragment() {
                     }
                     val top = y
                     if (index % 2 == 1) {
-                        canvas!!.drawRect(0f, top, pageWidth.toFloat(), top + rowHeight, Paint().apply {
+                        canvas!!.drawRect(columns.first(), top, columns.last(), top + rowHeight, Paint().apply {
                             color = lightGray
                         })
                     }
-                    canvas!!.drawLine(0f, top + rowHeight, pageWidth.toFloat(), top + rowHeight, Paint().apply {
+                    canvas!!.drawLine(columns.first(), top + rowHeight, columns.last(), top + rowHeight, Paint().apply {
                         color = ruleGray
                         strokeWidth = 0.6f
                     })
@@ -845,7 +864,7 @@ class OrdersFragment : Fragment() {
                 canvas!!.drawBitmap(
                     logo,
                     null,
-                    android.graphics.RectF(6f, 9f, 78f, 46f),
+                    android.graphics.RectF(12f, 9f, 78f, 46f),
                     Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
                 )
                 logo.recycle()
@@ -853,26 +872,36 @@ class OrdersFragment : Fragment() {
             val userName = preferences.getString("username", "Usuário").orEmpty().ifBlank { "Usuário" }
             val dateCreated = formatOrderDate(firstValue(order, "PedidoDtCadastro", "PedidoDtEmissao"))
             val paymentDescription = firstValue(order, "PedidoCondicaoPgtoDescricao")
-            canvas!!.drawText(userName, 88f, 20f, boldPaint)
-            canvas!!.drawText("Data Cadastro: $dateCreated    Forma Pgto.: $paymentDescription", 88f, 39f, smallPaint)
+            drawFittedText(userName, 88f, 20f, 300f, boldPaint)
+            drawFittedText(
+                "Data Cadastro: $dateCreated    Forma Pgto.: $paymentDescription",
+                88f,
+                39f,
+                300f,
+                smallPaint
+            )
 
             val orderNumber = firstValue(order, "PedidoNroPedidoRepresentante")
-                .ifBlank { firstValue(order, "PedidoMobId").ifBlank { draft.mobileId.toString() } }
+                .ifBlank {
+                    firstValue(order, "PedidoMobId").ifBlank {
+                        if (draft.mobileId > 0L) draft.mobileId.toString() else draft.erpId.toString()
+                    }
+                }
             val printTitle = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = dark
                 textSize = 16f
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             }
-            drawRightAlignedText("ESPELHO DO PEDIDO", pageWidth - 8f, 19f, printTitle)
+            drawRightAlignedText("ESPELHO DO PEDIDO", columns.last(), 19f, printTitle)
             drawRightAlignedText(
                 "Pedido: $orderNumber    ERP: ${if (draft.erpId > 0L) draft.erpId else "-"}",
-                pageWidth - 8f,
+                columns.last(),
                 36f,
                 smallPaint
             )
             drawRightAlignedText(
                 "Emissão: ${formatOrderDate(firstValue(order, "PedidoDtEmissao", "PedidoDtCadastro"))}",
-                pageWidth - 8f,
+                columns.last(),
                 49f,
                 smallPaint
             )
@@ -904,8 +933,8 @@ class OrdersFragment : Fragment() {
                 "Tp. Venda: $saleType" to "CEP: $postalCode"
             )
             infoRows.forEach { (left, right) ->
-                drawFittedText(left, 6f, y, 405f, smallPaint)
-                drawFittedText(right, 420f, y, 292f, smallPaint)
+                drawFittedText(left, 24f, y, 315f, smallPaint)
+                drawFittedText(right, 350f, y, 221f, smallPaint)
                 y += 14f
             }
 
@@ -913,14 +942,15 @@ class OrdersFragment : Fragment() {
             drawItemTable("Bonificação", bonusItems)
 
             val orderDate = firstValue(order, "PedidoDtEmissao", "PedidoDtCadastro")
-            val installments = orderItems(order, "PedidoParcelas", "PedidoParcelamento") ?: JSONArray()
+            val installments = orderItems(order, "PedidoParcelas", "PedidoParcelamento")
+                ?.let(::uniqueInstallments)
+                .orEmpty()
             val scheduleDays = paymentDescription.substringAfter("-", "")
                 .split("/")
                 .mapNotNull { Regex("\\d+").find(it)?.value?.toIntOrNull() }
             val parcelRows = mutableListOf<String>()
-            if (installments.length() > 0) {
-                for (index in 0 until installments.length()) {
-                    val installment = installments.optJSONObject(index) ?: continue
+            if (installments.isNotEmpty()) {
+                for ((index, installment) in installments.withIndex()) {
                     val number = installment.optInt("PedidoParcelaNro", index + 1)
                     val amount = jsonNumber(installment, "PedidoParcelaVlr") ?: 0.0
                     val dueDate = formatOrderDate(
@@ -959,38 +989,39 @@ class OrdersFragment : Fragment() {
             }
             val totalOrder = jsonNumber(order, "PedidoVlrTotal") ?: draft.total
 
-            val summaryTop = maxOf(y + 8f, pageHeight - 136f)
-            if (summaryTop + 112f > pageHeight) {
+            val summaryHeight = maxOf(112f, 42f + parcelRows.size * 14f)
+            var summaryTop = maxOf(y + 8f, pageHeight - summaryHeight - 24f)
+            if (summaryTop + summaryHeight + 24f > pageHeight) {
                 finishPage()
                 startPage()
-            } else {
-                y = summaryTop
+                summaryTop = maxOf(y + 8f, pageHeight - summaryHeight - 24f)
             }
+            y = summaryTop
             val summaryY = y
-            canvas!!.drawRect(0f, summaryY, 222f, summaryY + 23f, Paint().apply { color = dark })
+            canvas!!.drawRect(24f, summaryY, 249f, summaryY + 23f, Paint().apply { color = dark })
             canvas!!.drawText(
                 "Total de parcelas: ${parcelRows.size}",
-                6f,
+                30f,
                 summaryY + 16f,
                 whitePaint
             )
             parcelRows.forEachIndexed { index, line ->
-                drawFittedText(line, 6f, summaryY + 39f + index * 14f, 280f, smallPaint)
+                drawFittedText(line, 24f, summaryY + 39f + index * 14f, 225f, smallPaint)
             }
 
             val productsLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = dark
                 textSize = 14f
             }
-            val totalsRight = 650f
-            val totalsValue = 708f
+            val totalsRight = 495f
+            val totalsValue = 571f
             drawRightAlignedText("Total dos Produtos", totalsRight, summaryY + 20f, productsLabelPaint)
             drawRightAlignedText(formatPdfNumber(salesTotal.toDouble()), totalsValue, summaryY + 20f, productsLabelPaint)
             drawRightAlignedText("Total Peso", totalsRight, summaryY + 40f, productsLabelPaint)
             drawRightAlignedText(formatPdfQuantity(totalWeight), totalsValue, summaryY + 40f, productsLabelPaint)
-            canvas!!.drawRect(220f, summaryY + 55f, 710f, summaryY + 94f, Paint().apply { color = dark })
-            canvas!!.drawText("Total do Pedido", 300f, summaryY + 80f, whitePaint.apply { textSize = 15f })
-            drawRightAlignedText(formatPdfNumber(totalOrder), 700f, summaryY + 80f, whitePaint.apply { textSize = 15f })
+            canvas!!.drawRect(250f, summaryY + 55f, 571f, summaryY + 94f, Paint().apply { color = dark })
+            canvas!!.drawText("Total do Pedido", 265f, summaryY + 80f, whitePaint.apply { textSize = 15f })
+            drawRightAlignedText(formatPdfNumber(totalOrder), 559f, summaryY + 80f, whitePaint.apply { textSize = 15f })
 
             finishPage()
 

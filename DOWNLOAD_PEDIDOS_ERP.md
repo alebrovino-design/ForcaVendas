@@ -92,6 +92,8 @@ data class ERPOrder(
 )
 ```
 
+O retorno pode trazer o pedido diretamente ou dentro de `sdtPedidoAppVenda`/`JSON`; esses campos também podem conter o objeto JSON serializado como texto. A leitura aceita variações de maiúsculas/minúsculas nos nomes dos campos. `PedidoERPId` é obrigatório; quando `PedidoMobId` não vier, o armazenamento usa uma chave local negativa derivada do ID ERP, sem exibi-la como código móvel.
+
 ## Fluxo de Sincronização
 
 ```

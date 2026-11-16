@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
 import org.json.JSONObject
+import java.math.BigDecimal
 
 class ERPOrderLocalRepository(context: Context) {
     data class ERPOrder(
@@ -65,13 +66,38 @@ class ERPOrderLocalRepository(context: Context) {
         db.beginTransaction()
         try {
             for (index in 0 until orders.length()) {
-                val responseItem = orders.optJSONObject(index) ?: continue
-                val item = responseItem.optJSONObject("sdtPedidoAppVenda") ?: responseItem
-                val mobileId = firstLong(item, "PedidoMobId", "PedidoMobileId")
-                val erpId = firstLong(item, "PedidoERPId", "PedidoErpId")
+                val responseItem = parseObjectValue(orders.opt(index)) ?: continue
+                val item = JSONObject(findOrderPayload(responseItem).toString())
+                removeDuplicateInstallments(item)
+                val responseMobileId = firstLongInOrder(
+                    item,
+                    "PedidoMobId",
+                    "PedidoMobileId"
+                ).takeIf { it > 0L } ?: firstLongInOrder(
+                    responseItem,
+                    "PedidoMobId",
+                    "PedidoMobileId"
+                )
+                val erpId = firstLongInOrder(
+                    item,
+                    "PedidoERPId",
+                    "PedidoErpId"
+                ).takeIf { it > 0L } ?: firstLongInOrder(
+                    responseItem,
+                    "PedidoERPId",
+                    "PedidoErpId"
+                )
+                val mobileId = responseMobileId.takeIf { it > 0L }
+                    ?: erpId.takeIf { it > 0L }?.unaryMinus()
+                    ?: 0L
 
                 if (mobileId == 0L || erpId == 0L) {
-                    android.util.Log.w("ERPOrderRepository", "Pulando pedido sem IDs válidos: mobileId=$mobileId, erpId=$erpId")
+                    if (index == 0) {
+                        android.util.Log.w(
+                            "ERPOrderRepository",
+                            "Registro sem IDs válidos. Campos recebidos: ${describeFields(responseItem)}"
+                        )
+                    }
                     continue
                 }
 
@@ -123,9 +149,135 @@ class ERPOrderLocalRepository(context: Context) {
         return savedCount
     }
 
+    private fun removeDuplicateInstallments(order: JSONObject) {
+        listOf("PedidoParcelas", "PedidoParcelamento").forEach { name ->
+            val key = findKey(order, name) ?: return@forEach
+            val installments = order.optJSONArray(key) ?: return@forEach
+            val seen = mutableSetOf<String>()
+            val uniqueInstallments = JSONArray()
+
+            for (index in 0 until installments.length()) {
+                val value = installments.opt(index)
+                val installment = parseObjectValue(value)
+                if (installment == null) {
+                    uniqueInstallments.put(value)
+                    continue
+                }
+
+                val number = firstLong(installment, "PedidoParcelaNro")
+                val identity = if (number > 0L) {
+                    "number:$number"
+                } else {
+                    val dueDate = firstString(
+                        installment,
+                        "PedidoParcelaDtVencimento",
+                        "PedidoParcelaDataVencimento"
+                    )
+                    val amount = firstString(installment, "PedidoParcelaVlr")
+                    val days = firstString(installment, "PedidoParcelaDias")
+                    "details:$dueDate|$amount|$days"
+                }
+                if (seen.add(identity)) uniqueInstallments.put(value)
+            }
+
+            if (uniqueInstallments.length() != installments.length()) {
+                order.put(key, uniqueInstallments)
+            }
+        }
+    }
+
+    private fun findOrderPayload(value: JSONObject, depth: Int = 0): JSONObject {
+        if (depth >= 4) return value
+
+        var best = value
+        var bestScore = orderIdScore(value)
+        val keys = listOf("sdtPedidoAppVenda", "JSON", "Pedido", "PedidoVenda")
+
+        for (key in keys) {
+            val nested = parseObject(value, key) ?: continue
+            val candidate = findOrderPayload(nested, depth + 1)
+            val candidateScore = orderIdScore(candidate)
+            if (candidateScore >= bestScore && candidateScore > 0) {
+                best = candidate
+                bestScore = candidateScore
+            }
+        }
+        return best
+    }
+
+    private fun orderIdScore(json: JSONObject): Int {
+        var score = 0
+        if (firstLong(json, "PedidoMobId", "PedidoMobileId") > 0L) score++
+        if (firstLong(json, "PedidoERPId", "PedidoErpId") > 0L) score++
+        return score
+    }
+
+    private fun firstLongInOrder(json: JSONObject, vararg names: String, depth: Int = 0): Long {
+        val direct = firstLong(json, *names)
+        if (direct > 0L || depth >= 4) return direct
+
+        listOf("sdtPedidoAppVenda", "JSON", "Pedido", "PedidoVenda").forEach { key ->
+            val nested = parseObject(json, key) ?: return@forEach
+            val value = firstLongInOrder(nested, *names, depth = depth + 1)
+            if (value > 0L) return value
+        }
+        return direct
+    }
+
+    private fun parseObject(json: JSONObject, key: String): JSONObject? {
+        val actualKey = findKey(json, key) ?: return null
+        return parseObjectValue(json.opt(actualKey))
+    }
+
+    private fun parseObjectValue(value: Any?): JSONObject? {
+        return when (value) {
+            is JSONObject -> value
+            is String -> value.trim().takeIf { it.startsWith("{") }?.let {
+                runCatching { JSONObject(it) }.getOrNull()
+            }
+            else -> null
+        }
+    }
+
+    private fun describeFields(json: JSONObject, prefix: String = "", depth: Int = 0): List<String> {
+        val fields = mutableListOf<String>()
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val path = if (prefix.isEmpty()) key else "$prefix.$key"
+            fields.add(path)
+            if (depth < 3 && normalizeKey(key) in setOf(
+                    "sdtpedidoappvenda",
+                    "json",
+                    "pedido",
+                    "pedidovenda"
+                )
+            ) {
+                parseObject(json, key)?.let {
+                    fields.addAll(describeFields(it, path, depth + 1))
+                }
+            }
+        }
+        return fields
+    }
+
+    private fun findKey(json: JSONObject, name: String): String? {
+        val normalizedName = normalizeKey(name)
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            if (normalizeKey(key) == normalizedName) return key
+        }
+        return null
+    }
+
+    private fun normalizeKey(value: String): String =
+        value.filter(Char::isLetterOrDigit).lowercase()
+
     private fun firstString(json: JSONObject, vararg names: String): String {
         names.forEach { name ->
-            val value = json.optString(name).trim()
+            val key = findKey(json, name) ?: return@forEach
+            val value = json.optString(key).trim()
             if (value.isNotEmpty() && value != "null") return value
         }
         return ""
@@ -133,15 +285,24 @@ class ERPOrderLocalRepository(context: Context) {
 
     private fun firstLong(json: JSONObject, vararg names: String): Long {
         names.forEach { name ->
-            val value = json.optString(name).trim()
-            value.toLongOrNull()?.let { return it }
+            val key = findKey(json, name) ?: return@forEach
+            val value = json.opt(key)
+            val parsed = when (value) {
+                is Number -> value.toString().toLongOrNull()
+                    ?: runCatching { BigDecimal(value.toString()).longValueExact() }.getOrNull()
+                is String -> value.trim().toLongOrNull()
+                    ?: runCatching { BigDecimal(value.trim()).longValueExact() }.getOrNull()
+                else -> null
+            }
+            parsed?.let { return it }
         }
         return 0L
     }
 
     private fun firstDouble(json: JSONObject, vararg names: String): Double {
         names.forEach { name ->
-            val value = json.optString(name).trim()
+            val key = findKey(json, name) ?: return@forEach
+            val value = json.optString(key).trim()
             value.replace(",", ".").toDoubleOrNull()?.let { return it }
         }
         return 0.0
