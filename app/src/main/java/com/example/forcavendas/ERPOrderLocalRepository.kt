@@ -18,11 +18,14 @@ class ERPOrderLocalRepository(context: Context) {
         val status: String,
         val total: Double,
         val emissionDate: String,
-        val json: JSONObject
+        val json: JSONObject,
+        val cachedWeight: Double,
+        val cachedCompanyName: String,
+        val cachedRegionDescription: String
     )
 
     private class Database(context: Context) :
-        SQLiteOpenHelper(context, "forca_vendas_erp_orders.db", null, 1) {
+        SQLiteOpenHelper(context, "forca_vendas_erp_orders.db", null, 2) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("""
                 CREATE TABLE erp_orders (
@@ -35,6 +38,9 @@ class ERPOrderLocalRepository(context: Context) {
                     total REAL,
                     emission_date TEXT,
                     json_data TEXT NOT NULL,
+                    cached_weight REAL,
+                    cached_company_name TEXT,
+                    cached_region_description TEXT,
                     synced_at INTEGER,
                     created_at INTEGER DEFAULT CURRENT_TIMESTAMP
                 )
@@ -52,16 +58,24 @@ class ERPOrderLocalRepository(context: Context) {
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            db.execSQL("DROP TABLE IF EXISTS erp_orders")
-            db.execSQL("DROP TABLE IF EXISTS erp_sync_metadata")
-            onCreate(db)
+            if (oldVersion < 2) {
+                db.execSQL("ALTER TABLE erp_orders ADD COLUMN cached_weight REAL")
+                db.execSQL("ALTER TABLE erp_orders ADD COLUMN cached_company_name TEXT")
+                db.execSQL("ALTER TABLE erp_orders ADD COLUMN cached_region_description TEXT")
+            }
         }
     }
 
-    private val database = Database(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val database = Database(appContext)
 
     fun saveOrders(representanteId: String, orders: JSONArray): Int {
         val db = database.writableDatabase
+        val companyNames = CompanyLocalRepository(appContext).getAll()
+            .associate { it.id to it.name }
+        val regionNames = loadRegionNames()
+        val operationIpiTypes = OrderOperationLocalRepository(appContext).loadIpiTypes()
+            .mapKeys { normalizeOperationId(it.key) }
         var savedCount = 0
         db.beginTransaction()
         try {
@@ -69,6 +83,7 @@ class ERPOrderLocalRepository(context: Context) {
                 val responseItem = parseObjectValue(orders.opt(index)) ?: continue
                 val item = JSONObject(findOrderPayload(responseItem).toString())
                 removeDuplicateInstallments(item)
+                restoreMissingIpiTypes(item, operationIpiTypes)
                 val responseMobileId = firstLongInOrder(
                     item,
                     "PedidoMobId",
@@ -116,6 +131,14 @@ class ERPOrderLocalRepository(context: Context) {
                 val status = firstString(item, "PedidoStatus").ifBlank { "Processado" }
                 val total = firstDouble(item, "PedidoVlrTotal", "PedidoValorTotal")
                 val emissionDate = firstString(item, "PedidoDtEmissao", "PedidoDtCadastro")
+                val companyName = firstString(item, "PedidoEmpresaNome", "EmpresaNome")
+                    .ifBlank { companyNames[firstString(item, "PedidoEmpresaId")].orEmpty() }
+                val regionDescription = firstString(
+                    item,
+                    "PedidoEntidadeRegiaoDescricao",
+                    "PedidoEntidadeRegiaoNome",
+                    "PedidoRegiaoDescricao"
+                ).ifBlank { regionNames[regionId].orEmpty() }
 
                 val values = ContentValues().apply {
                     put("mobile_id", mobileId)
@@ -129,6 +152,9 @@ class ERPOrderLocalRepository(context: Context) {
                     put("json_data", JSONObject().apply {
                         put("sdtPedidoAppVenda", item)
                     }.toString())
+                    put("cached_weight", calculateOrderWeight(item))
+                    put("cached_company_name", companyName)
+                    put("cached_region_description", regionDescription)
                     put("synced_at", System.currentTimeMillis())
                 }
 
@@ -184,6 +210,44 @@ class ERPOrderLocalRepository(context: Context) {
                 order.put(key, uniqueInstallments)
             }
         }
+    }
+
+    private fun restoreMissingIpiTypes(
+        order: JSONObject,
+        operationIpiTypes: Map<String, String>
+    ) {
+        val items = firstArray(order, "ItemPedido", "PedidoProdutos", "PedidoItens") ?: return
+        val orderOperationId = firstString(
+            order,
+            "PedidoTipoOperacaoPedId",
+            "PedidoTipoOperacaoERPId",
+            "PedidoTipoOperacaoId"
+        )
+
+        for (index in 0 until items.length()) {
+            val originalValue = items.opt(index)
+            val item = parseObjectValue(originalValue) ?: continue
+            if (firstString(item, "ItemPedidoTipoIPI").isNotBlank()) continue
+
+            val operationId = firstString(
+                item,
+                "ItemPedidoTipoOperacaoPedId",
+                "ItemPedidoTipoOperacaoId"
+            ).ifBlank { orderOperationId }
+            if (operationId.isBlank()) continue
+
+            val ipiType = operationIpiTypes[normalizeOperationId(operationId)] ?: continue
+            val ipiKey = findKey(item, "ItemPedidoTipoIPI") ?: "ItemPedidoTipoIPI"
+            item.put(ipiKey, ipiType)
+            if (originalValue !is JSONObject) items.put(index, item)
+        }
+    }
+
+    private fun normalizeOperationId(value: String): String {
+        val trimmed = value.trim()
+        return runCatching {
+            BigDecimal(trimmed.replace(",", ".")).stripTrailingZeros().toPlainString()
+        }.getOrDefault(trimmed)
     }
 
     private fun findOrderPayload(value: JSONObject, depth: Int = 0): JSONObject {
@@ -308,6 +372,49 @@ class ERPOrderLocalRepository(context: Context) {
         return 0.0
     }
 
+    private fun calculateOrderWeight(order: JSONObject): Double {
+        val products = firstArray(order, "ItemPedido", "PedidoProdutos", "PedidoItens")
+            ?: return 0.0
+        var weight = 0.0
+        for (index in 0 until products.length()) {
+            val product = parseObjectValue(products.opt(index)) ?: continue
+            val productWeight = firstDouble(
+                product,
+                "ItemPedidoProdutoPesoLiq",
+                "ProdutoPeso",
+                "ItemPedidoProdutoPeso"
+            )
+            val quantity = firstDouble(
+                product,
+                "ItemPedidoQtde",
+                "ProdutoQuantidade",
+                "Quantidade"
+            )
+            weight += productWeight * quantity
+        }
+        return weight
+    }
+
+    private fun firstArray(json: JSONObject, vararg names: String): JSONArray? {
+        names.forEach { name ->
+            val key = findKey(json, name) ?: return@forEach
+            json.optJSONArray(key)?.let { return it }
+        }
+        return null
+    }
+
+    private fun loadRegionNames(): Map<String, String> {
+        val items = PriceTableItemService.load(appContext)
+        return (0 until items.length())
+            .mapNotNull { items.optJSONObject(it) }
+            .mapNotNull { item ->
+                val id = item.optString("RegiaoId")
+                val name = item.optString("RegiaoDescricao")
+                if (id.isBlank() || name.isBlank()) null else id to name
+            }
+            .toMap()
+    }
+
     private fun updateSyncMetadata(db: SQLiteDatabase, representanteId: String, syncCount: Int) {
         val metadata = ContentValues().apply {
             put("representante_id", representanteId)
@@ -325,12 +432,16 @@ class ERPOrderLocalRepository(context: Context) {
     }
 
     fun loadAll(): List<ERPOrder> {
-        val db = database.readableDatabase
+        val db = database.writableDatabase
         val result = mutableListOf<ERPOrder>()
+        val cacheUpdates = mutableListOf<Pair<Long, ContentValues>>()
+        var companyNames: Map<String, String>? = null
+        var regionNames: Map<String, String>? = null
 
         db.rawQuery(
             """
-            SELECT mobile_id, erp_id, client_id, client_name, region_id, status, total, emission_date, json_data
+            SELECT mobile_id, erp_id, client_id, client_name, region_id, status, total, emission_date,
+                json_data, cached_weight, cached_company_name, cached_region_description
             FROM erp_orders
             ORDER BY synced_at DESC
             """.trimIndent(),
@@ -339,6 +450,59 @@ class ERPOrderLocalRepository(context: Context) {
             while (cursor.moveToNext()) {
                 try {
                     val jsonData = JSONObject(cursor.getString(8))
+                    val order = parseObject(jsonData, "sdtPedidoAppVenda") ?: jsonData
+                    val cachedWeight = if (cursor.isNull(9)) {
+                        calculateOrderWeight(order)
+                    } else {
+                        cursor.getDouble(9)
+                    }
+                    val cachedCompanyName = if (cursor.isNull(10)) {
+                        firstString(order, "PedidoEmpresaNome", "EmpresaNome").ifBlank {
+                            val companyId = firstString(order, "PedidoEmpresaId")
+                            if (companyId.isBlank()) {
+                                ""
+                            } else {
+                                if (companyNames == null) {
+                                    companyNames = CompanyLocalRepository(appContext).getAll()
+                                        .associate { it.id to it.name }
+                                }
+                                companyNames?.get(companyId).orEmpty()
+                            }
+                        }
+                    } else {
+                        cursor.getString(10).orEmpty()
+                    }
+                    val cachedRegionDescription = if (cursor.isNull(11)) {
+                        firstString(
+                            order,
+                            "PedidoEntidadeRegiaoDescricao",
+                            "PedidoEntidadeRegiaoNome",
+                            "PedidoRegiaoDescricao"
+                        ).ifBlank {
+                            val regionId = firstString(
+                                order,
+                                "PedidoEntidadeRegiaoid",
+                                "PedidoEntidadeRegiaoId"
+                            )
+                            if (regionId.isBlank()) {
+                                ""
+                            } else {
+                                if (regionNames == null) regionNames = loadRegionNames()
+                                regionNames?.get(regionId).orEmpty()
+                            }
+                        }
+                    } else {
+                        cursor.getString(11).orEmpty()
+                    }
+                    if (cursor.isNull(9) || cursor.isNull(10) || cursor.isNull(11)) {
+                        cacheUpdates.add(
+                            cursor.getLong(0) to ContentValues().apply {
+                                put("cached_weight", cachedWeight)
+                                put("cached_company_name", cachedCompanyName)
+                                put("cached_region_description", cachedRegionDescription)
+                            }
+                        )
+                    }
                     result.add(ERPOrder(
                         mobileId = cursor.getLong(0),
                         erpId = cursor.getLong(1),
@@ -348,11 +512,31 @@ class ERPOrderLocalRepository(context: Context) {
                         status = cursor.getString(5),
                         total = cursor.getDouble(6),
                         emissionDate = cursor.getString(7),
-                        json = jsonData
+                        json = jsonData,
+                        cachedWeight = cachedWeight,
+                        cachedCompanyName = cachedCompanyName,
+                        cachedRegionDescription = cachedRegionDescription
                     ))
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
+            }
+        }
+
+        if (cacheUpdates.isNotEmpty()) {
+            db.beginTransaction()
+            try {
+                cacheUpdates.forEach { (mobileId, values) ->
+                    db.update(
+                        "erp_orders",
+                        values,
+                        "mobile_id = ?",
+                        arrayOf(mobileId.toString())
+                    )
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
             }
         }
 
@@ -365,7 +549,8 @@ class ERPOrderLocalRepository(context: Context) {
 
         db.rawQuery(
             """
-            SELECT mobile_id, erp_id, client_id, client_name, region_id, status, total, emission_date, json_data
+            SELECT mobile_id, erp_id, client_id, client_name, region_id, status, total, emission_date,
+                json_data, cached_weight, cached_company_name, cached_region_description
             FROM erp_orders
             WHERE client_id = ?
             ORDER BY synced_at DESC
@@ -375,6 +560,7 @@ class ERPOrderLocalRepository(context: Context) {
             while (cursor.moveToNext()) {
                 try {
                     val jsonData = JSONObject(cursor.getString(8))
+                    val order = parseObject(jsonData, "sdtPedidoAppVenda") ?: jsonData
                     result.add(ERPOrder(
                         mobileId = cursor.getLong(0),
                         erpId = cursor.getLong(1),
@@ -384,7 +570,18 @@ class ERPOrderLocalRepository(context: Context) {
                         status = cursor.getString(5),
                         total = cursor.getDouble(6),
                         emissionDate = cursor.getString(7),
-                        json = jsonData
+                        json = jsonData,
+                        cachedWeight = if (cursor.isNull(9)) calculateOrderWeight(order) else cursor.getDouble(9),
+                        cachedCompanyName = cursor.getString(10).orEmpty()
+                            .ifBlank { firstString(order, "PedidoEmpresaNome", "EmpresaNome") },
+                        cachedRegionDescription = cursor.getString(11).orEmpty().ifBlank {
+                            firstString(
+                                order,
+                                "PedidoEntidadeRegiaoDescricao",
+                                "PedidoEntidadeRegiaoNome",
+                                "PedidoRegiaoDescricao"
+                            )
+                        }
                     ))
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -400,7 +597,8 @@ class ERPOrderLocalRepository(context: Context) {
 
         db.rawQuery(
             """
-            SELECT mobile_id, erp_id, client_id, client_name, region_id, status, total, emission_date, json_data
+            SELECT mobile_id, erp_id, client_id, client_name, region_id, status, total, emission_date,
+                json_data, cached_weight, cached_company_name, cached_region_description
             FROM erp_orders
             WHERE erp_id = ?
             LIMIT 1
@@ -410,6 +608,7 @@ class ERPOrderLocalRepository(context: Context) {
             return if (cursor.moveToFirst()) {
                 try {
                     val jsonData = JSONObject(cursor.getString(8))
+                    val order = parseObject(jsonData, "sdtPedidoAppVenda") ?: jsonData
                     ERPOrder(
                         mobileId = cursor.getLong(0),
                         erpId = cursor.getLong(1),
@@ -419,7 +618,18 @@ class ERPOrderLocalRepository(context: Context) {
                         status = cursor.getString(5),
                         total = cursor.getDouble(6),
                         emissionDate = cursor.getString(7),
-                        json = jsonData
+                        json = jsonData,
+                        cachedWeight = if (cursor.isNull(9)) calculateOrderWeight(order) else cursor.getDouble(9),
+                        cachedCompanyName = cursor.getString(10).orEmpty()
+                            .ifBlank { firstString(order, "PedidoEmpresaNome", "EmpresaNome") },
+                        cachedRegionDescription = cursor.getString(11).orEmpty().ifBlank {
+                            firstString(
+                                order,
+                                "PedidoEntidadeRegiaoDescricao",
+                                "PedidoEntidadeRegiaoNome",
+                                "PedidoRegiaoDescricao"
+                            )
+                        }
                     )
                 } catch (e: Exception) {
                     null

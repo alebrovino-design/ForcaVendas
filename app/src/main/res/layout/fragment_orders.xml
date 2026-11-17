@@ -33,6 +33,16 @@
             android:textStyle="bold" />
 
         <ImageButton
+            android:id="@+id/orders_search"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Pesquisar pedidos por cliente ou data"
+            android:src="@android:drawable/ic_menu_search"
+            app:tint="@color/white" />
+
+        <ImageButton
             android:id="@+id/orders_sync"
             android:layout_width="40dp"
             android:layout_height="40dp"

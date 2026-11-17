@@ -120,6 +120,23 @@ class OrderOperationLocalRepository(context: Context) {
         }
     }
 
+    fun loadIpiTypes(): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        database.readableDatabase.rawQuery(
+            "SELECT erp_id, natop_ipi FROM order_operations",
+            null
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val operationId = cursor.getString(0)?.trim().orEmpty()
+                val ipiType = cursor.getString(1)?.trim().orEmpty()
+                if (operationId.isNotBlank() && ipiType.isNotBlank()) {
+                    result[operationId] = ipiType
+                }
+            }
+        }
+        return result
+    }
+
     fun find(
         companyId: String,
         activityOperationId: String,

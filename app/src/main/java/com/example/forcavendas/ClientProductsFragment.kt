@@ -1498,6 +1498,7 @@ class ClientProductsFragment : Fragment() {
             put("PedidoEntidadeMobId", 0)
             put("PedidoEntidadeId", clientId.toIntOrNull() ?: 0)
             put("PedidoEntidadeNome", clientName)
+            put("PedidoEntidadeNomeRazao", clientJson?.optString("EntidadeNomeRazao").orEmpty())
             put("PedidoTipoFrete", "")
             put("PedidoEntidadeNomeFantasia", fantasyName)
             put("PedidoEntidadeRegiaoid", regionId.toIntOrNull() ?: 0)

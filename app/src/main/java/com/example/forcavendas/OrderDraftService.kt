@@ -17,7 +17,12 @@ object OrderDraftService {
         val createdAt: String,
         val total: Double,
         val status: String,
-        val json: JSONObject
+        val json: JSONObject,
+        val clientReasonName: String = "",
+        val clientFantasyName: String = "",
+        val cachedWeight: Double? = null,
+        val cachedCompanyName: String = "",
+        val cachedRegionDescription: String = ""
     )
 
     fun load(context: Context): List<Draft> {
@@ -39,6 +44,8 @@ object OrderDraftService {
                 clientName = order.optString("PedidoEntidadeNome").ifBlank {
                     order.optString("PedidoEntidadeNomeFantasia")
                 },
+                clientReasonName = order.optString("PedidoEntidadeNomeRazao"),
+                clientFantasyName = order.optString("PedidoEntidadeNomeFantasia"),
                 regionId = order.optString("PedidoEntidadeRegiaoid"),
                 createdAt = order.optString("PedidoDtCadastro"),
                 total = order.optDouble("PedidoVlrTotal", 0.0),

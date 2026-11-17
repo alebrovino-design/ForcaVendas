@@ -6,12 +6,18 @@ import android.graphics.Canvas
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfDocument
 import android.graphics.Color
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputType
+import android.app.DatePickerDialog
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -25,7 +31,10 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 import java.util.Locale
 import java.io.File
@@ -35,6 +44,10 @@ import org.json.JSONObject
 
 class OrdersFragment : Fragment() {
     private var binding: FragmentOrdersBinding? = null
+    private var renderJob: Job? = null
+    private var loadedOrders: List<OrderDraftService.Draft> = emptyList()
+    private var clientSearchFilter = ""
+    private var dateSearchFilter = ""
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -47,9 +60,9 @@ class OrdersFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         binding?.ordersBack?.setOnClickListener { findNavController().navigateUp() }
+        binding?.ordersSearch?.setOnClickListener { showOrderSearchDialog() }
         binding?.ordersSync?.setOnClickListener { sincronizarPedidosPendentes() }
         binding?.ordersRefresh?.setOnClickListener { baixarPedidosDoERP() }
-        renderOrders()
     }
 
     override fun onResume() {
@@ -58,25 +71,153 @@ class OrdersFragment : Fragment() {
     }
 
     private fun renderOrders() {
-        val list = binding?.ordersList ?: return
-        val message = binding?.ordersMessage ?: return
-
-        val drafts = OrderDraftService.load(requireContext())
-        val erpRepository = ERPOrderLocalRepository(requireContext())
-        val erpOrders = erpRepository.loadAll()
-        val downloadedOrders = erpOrders.map { toOrderDraft(it) }
-        val downloadedMobileIds = downloadedOrders.mapTo(mutableSetOf()) { it.mobileId }
-        val allOrders = (downloadedOrders + drafts.filterNot { it.mobileId in downloadedMobileIds })
-            .sortedByDescending { draft ->
-                draft.json.optJSONObject("sdtPedidoAppVenda")?.optLong("PedidoMobId", 0L) ?: 0L
+        val context = context?.applicationContext ?: return
+        renderJob?.cancel()
+        renderJob = viewLifecycleOwner.lifecycleScope.launch {
+            val allOrders = withContext(Dispatchers.IO) {
+                val drafts = OrderDraftService.load(context)
+                val erpOrders = ERPOrderLocalRepository(context).loadAll()
+                val downloadedOrders = erpOrders.map { toOrderDraft(it) }
+                val downloadedMobileIds = downloadedOrders.mapTo(mutableSetOf()) { it.mobileId }
+                val clientNames = loadClientNames(context)
+                (downloadedOrders + drafts.filterNot { it.mobileId in downloadedMobileIds })
+                    .map { draft ->
+                        val client = clientNames[normalizeClientId(draft.clientId)]
+                        draft.copy(
+                            clientReasonName = draft.clientReasonName
+                                .ifBlank { client?.reasonName.orEmpty() },
+                            clientFantasyName = draft.clientFantasyName
+                                .ifBlank { client?.fantasyName.orEmpty() }
+                        )
+                    }
+                    .sortedByDescending { draft ->
+                        draft.json.optJSONObject("sdtPedidoAppVenda")?.optLong("PedidoMobId", 0L) ?: 0L
+                    }
             }
 
-        list.removeAllViews()
-        message.visibility = if (allOrders.isEmpty()) View.VISIBLE else View.GONE
-
-        allOrders.forEach { draft ->
-            renderOrderCard(list, draft)
+            loadedOrders = allOrders
+            renderFilteredOrders()
         }
+    }
+
+    private fun renderFilteredOrders() {
+        val list = binding?.ordersList ?: return
+        val message = binding?.ordersMessage ?: return
+        val clientQuery = clientSearchFilter.trim().lowercase(Locale.ROOT)
+        val filteredOrders = loadedOrders.filter { draft ->
+            val matchesClient = clientQuery.isBlank() || listOf(
+                draft.clientId,
+                draft.clientName,
+                draft.clientReasonName,
+                draft.clientFantasyName
+            ).any { it.lowercase(Locale.ROOT).contains(clientQuery) }
+            val order = draft.json.optJSONObject("sdtPedidoAppVenda")
+            val matchesDate = dateSearchFilter.isBlank() ||
+                orderDateKey(firstValue(order, "PedidoDtEmissao", "PedidoDtCadastro", "PedidoData")) ==
+                dateSearchFilter
+            matchesClient && matchesDate
+        }
+
+        list.removeAllViews()
+        message.text = if (loadedOrders.isEmpty()) {
+            "Nenhum pedido salvo."
+        } else {
+            "Nenhum pedido encontrado com esses filtros."
+        }
+        message.visibility = if (filteredOrders.isEmpty()) View.VISIBLE else View.GONE
+        filteredOrders.forEach { draft -> renderOrderCard(list, draft) }
+    }
+
+    private fun showOrderSearchDialog() {
+        val context = requireContext()
+        val clientInput = EditText(context).apply {
+            hint = "Cliente: nome, fantasia ou código"
+            inputType = InputType.TYPE_CLASS_TEXT
+            setSingleLine(true)
+            setText(clientSearchFilter)
+        }
+        var selectedDate = dateSearchFilter
+        val dateButton = MaterialButton(context).apply {
+            text = selectedDate
+                .takeIf(String::isNotBlank)
+                ?.let { "Data: ${formatSearchDate(it)}" }
+                ?: "Data: qualquer"
+            setOnClickListener {
+                val calendar = selectedDateCalendar(selectedDate)
+                DatePickerDialog(
+                    context,
+                    { _, year, month, day ->
+                        calendar.set(year, month, day, 0, 0, 0)
+                        calendar.set(java.util.Calendar.MILLISECOND, 0)
+                        selectedDate = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                            .format(calendar.time)
+                        text = "Data: ${formatSearchDate(selectedDate)}"
+                    },
+                    calendar.get(java.util.Calendar.YEAR),
+                    calendar.get(java.util.Calendar.MONTH),
+                    calendar.get(java.util.Calendar.DAY_OF_MONTH)
+                ).show()
+            }
+        }
+        val fields = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(4), dp(8), 0)
+            addView(
+                clientInput,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+            addView(
+                dateButton,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(8) }
+            )
+        }
+
+        AlertDialog.Builder(context)
+            .setTitle("Pesquisar pedidos")
+            .setView(fields)
+            .setPositiveButton("Aplicar") { _, _ ->
+                clientSearchFilter = clientInput.text.toString().trim()
+                dateSearchFilter = selectedDate
+                renderFilteredOrders()
+            }
+            .setNeutralButton("Limpar") { _, _ ->
+                clientSearchFilter = ""
+                dateSearchFilter = ""
+                renderFilteredOrders()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun selectedDateCalendar(date: String): java.util.Calendar {
+        val calendar = java.util.Calendar.getInstance()
+        if (date.isBlank()) return calendar
+        val parsed = runCatching {
+            java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(date)
+        }.getOrNull()
+        if (parsed != null) calendar.time = parsed
+        return calendar
+    }
+
+    private fun formatSearchDate(date: String): String {
+        val parsed = runCatching {
+            java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(date)
+        }.getOrNull() ?: return date
+        return java.text.SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).format(parsed)
+    }
+
+    private fun orderDateKey(value: String): String {
+        val parsed = listOf("yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd", "dd/MM/yyyy")
+            .firstNotNullOfOrNull { pattern ->
+                runCatching { java.text.SimpleDateFormat(pattern, Locale.US).parse(value) }.getOrNull()
+            } ?: return ""
+        return java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(parsed)
     }
 
     private fun toOrderDraft(erpOrder: ERPOrderLocalRepository.ERPOrder): OrderDraftService.Draft {
@@ -89,8 +230,55 @@ class OrdersFragment : Fragment() {
             createdAt = erpOrder.emissionDate,
             total = erpOrder.total,
             status = erpOrder.status,
-            json = erpOrder.json
+            json = erpOrder.json,
+            clientReasonName = firstValue(
+                erpOrder.json.optJSONObject("sdtPedidoAppVenda"),
+                "PedidoEntidadeNomeRazao"
+            ),
+            clientFantasyName = firstValue(
+                erpOrder.json.optJSONObject("sdtPedidoAppVenda"),
+                "PedidoEntidadeNomeFantasia"
+            ),
+            cachedWeight = erpOrder.cachedWeight,
+            cachedCompanyName = erpOrder.cachedCompanyName,
+            cachedRegionDescription = erpOrder.cachedRegionDescription
         )
+    }
+
+    private data class ClientNames(val reasonName: String, val fantasyName: String)
+
+    private fun loadClientNames(context: android.content.Context): Map<String, ClientNames> {
+        val clientsJson = context.getSharedPreferences("forca_vendas", 0)
+            .getString("clients_synced_json", "[]") ?: "[]"
+        return try {
+            val clients = JSONArray(clientsJson)
+            buildMap {
+                for (index in 0 until clients.length()) {
+                    val client = clients.optJSONObject(index) ?: continue
+                    val id = client.optString("EntidadeId").trim()
+                    val reasonName = client.optString("EntidadeNomeRazao").trim()
+                    val fantasyName = client.optString("EntidadeNomeFantasia").trim()
+                    if (id.isNotBlank()) {
+                        put(
+                            normalizeClientId(id),
+                            ClientNames(reasonName, fantasyName)
+                        )
+                    }
+                }
+            }
+        } catch (exception: org.json.JSONException) {
+            android.util.Log.w("OrdersFragment", "Não foi possível ler nomes dos clientes sincronizados", exception)
+            emptyMap()
+        }
+    }
+
+    private fun normalizeClientId(value: String): String {
+        val trimmed = value.trim()
+        return runCatching {
+            java.math.BigDecimal(trimmed.replace(",", "."))
+                .stripTrailingZeros()
+                .toPlainString()
+        }.getOrDefault(trimmed)
     }
 
     private fun renderOrderCard(list: LinearLayout, draft: OrderDraftService.Draft) {
@@ -112,20 +300,20 @@ class OrdersFragment : Fragment() {
         val isErp = draft.erpId > 0L
         val displayedOrderTotal = order?.let { jsonNumber(it, "PedidoVlrTotal") }
             ?.takeIf { it > 0.0 } ?: draft.total
-        val weight = calculateOrderWeight(draft)
+        val weight = draft.cachedWeight ?: calculateOrderWeight(draft)
         val status = order?.optString("PedidoStatus").orEmpty()
             .ifBlank { draft.status.ifBlank { "EM CARTEIRA" } }
-
-        content.addView(TextView(requireContext()).apply {
-            text = draft.clientName.ifBlank { "Cliente ${draft.clientId}" }
-            textSize = 16f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(android.graphics.Color.WHITE)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(12) }
-        })
+        val reasonName = firstValue(order, "PedidoEntidadeNomeRazao")
+            .ifBlank { draft.clientReasonName }
+        val fallbackName = firstValue(order, "PedidoEntidadeNome").ifBlank { draft.clientName }
+        val fantasyName = firstValue(order, "PedidoEntidadeNomeFantasia")
+            .ifBlank { draft.clientFantasyName }
+            .ifBlank { fallbackName.takeUnless { it.equals(reasonName, ignoreCase = true) }.orEmpty() }
+        val clientNames = listOf(reasonName, fantasyName)
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinctBy { it.lowercase() }
+            .ifEmpty { listOf(fallbackName.ifBlank { "Cliente ${draft.clientId}" }) }
 
         val row1 = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -138,6 +326,19 @@ class OrdersFragment : Fragment() {
         row1.addView(createFieldColumn("Código ERP", if (isErp) draft.erpId.toString() else "-"))
         row1.addView(createFieldColumn("Status", status))
         content.addView(row1)
+
+        clientNames.forEachIndexed { index, name ->
+            content.addView(TextView(requireContext()).apply {
+                text = name
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(resources.getColor(R.color.text_primary, requireContext().theme))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(if (index == clientNames.lastIndex) 12 else 4) }
+            })
+        }
 
         val row2 = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -166,65 +367,12 @@ class OrdersFragment : Fragment() {
             ).apply { bottomMargin = dp(8) }
         })
 
-        val installments = order?.let { orderItems(it, "PedidoParcelas", "PedidoParcelamento") }
-            ?.let(::uniqueInstallments)
-            .orEmpty()
-        val conditionDays = paymentText.substringAfter("-", "")
-            .split("/")
-            .mapNotNull { Regex("\\d+").find(it)?.value?.toIntOrNull() }
-        if (installments.isNotEmpty() || conditionDays.isNotEmpty()) {
-            val days = installments.mapNotNull { jsonNumber(it, "PedidoParcelaDias")?.toInt() }
-                .ifEmpty { conditionDays }
-            val averageTerm = order?.optInt("PedidoCondicaoPgtoPrazoMedio", 0)
-                ?.takeIf { it > 0 } ?: days.takeIf { it.isNotEmpty() }?.average()?.toInt() ?: 0
-            val installmentCount = if (installments.isNotEmpty()) installments.size else days.size
-            val installmentSummary =
-                "$installmentCount Parcelas / Prazo Médio $averageTerm Dias"
-            val installmentLines = mutableListOf(installmentSummary)
-            if (installments.isNotEmpty()) {
-                for ((index, installment) in installments.withIndex()) {
-                    val number = installment.optInt("PedidoParcelaNro", index + 1)
-                    val amount = jsonNumber(installment, "PedidoParcelaVlr") ?: 0.0
-                    val rawDueDate = firstValue(
-                        installment,
-                        "PedidoParcelaDtVencimento",
-                        "PedidoParcelaDataVencimento"
-                    )
-                    val dueDate = formatOrderDate(rawDueDate)
-                    val daysText = jsonNumber(installment, "PedidoParcelaDias")
-                        ?.toInt()
-                        ?.let { " (+$it dias)" }
-                        .orEmpty()
-                    installmentLines.add("Parcela $number: ${formatCurrency(amount)} - $dueDate$daysText")
-                }
-            } else {
-                val count = days.size
-                val baseAmount = java.math.BigDecimal.valueOf(displayedOrderTotal)
-                    .divide(java.math.BigDecimal(count), 2, java.math.RoundingMode.DOWN)
-                val lastAmount = java.math.BigDecimal.valueOf(displayedOrderTotal)
-                    .subtract(baseAmount.multiply(java.math.BigDecimal(count - 1)))
-                days.forEachIndexed { index, dueDays ->
-                    val amount = if (index == count - 1) lastAmount.toDouble() else baseAmount.toDouble()
-                    val dueDate = formatInstallmentDate(
-                        firstValue(order, "PedidoDtEmissao", "PedidoDtCadastro"),
-                        dueDays
-                    )
-                    installmentLines.add(
-                        "Parcela ${index + 1}: ${formatCurrency(amount)} - $dueDate (+$dueDays dias)"
-                    )
-                }
-            }
-            content.addView(createFieldColumn("Parcelas do pedido", installmentLines.joinToString("\n")).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(12) }
-            })
-        }
-
         val companyId = firstValue(order, "PedidoEmpresaId")
         val companyName = firstValue(order, "PedidoEmpresaNome", "EmpresaNome")
-            .ifBlank { CompanyLocalRepository(requireContext()).findById(companyId)?.name.orEmpty() }
+            .ifBlank { draft.cachedCompanyName }
+            .ifBlank {
+                if (isErp) "" else CompanyLocalRepository(requireContext()).findById(companyId)?.name.orEmpty()
+            }
         val companyDisplay = when {
             companyId.isBlank() -> companyName
             companyName.isBlank() -> companyId
@@ -237,15 +385,18 @@ class OrdersFragment : Fragment() {
             "PedidoEntidadeRegiaoDescricao",
             "PedidoEntidadeRegiaoNome",
             "PedidoRegiaoDescricao"
-        ).ifBlank {
-            val priceItems = PriceTableItemService.load(requireContext())
-            (0 until priceItems.length())
-                .asSequence()
-                .mapNotNull { priceItems.optJSONObject(it) }
-                .firstOrNull { it.optString("RegiaoId") == regionId }
-                ?.optString("RegiaoDescricao")
-                .orEmpty()
-        }
+        ).ifBlank { draft.cachedRegionDescription }
+            .ifBlank {
+                if (isErp) "" else {
+                    val priceItems = PriceTableItemService.load(requireContext())
+                    (0 until priceItems.length())
+                        .asSequence()
+                        .mapNotNull { priceItems.optJSONObject(it) }
+                        .firstOrNull { it.optString("RegiaoId") == regionId }
+                        ?.optString("RegiaoDescricao")
+                        .orEmpty()
+                }
+            }
         val regionDisplay = when {
             regionId.isBlank() -> regionDescription
             regionDescription.isBlank() -> regionId
@@ -592,21 +743,106 @@ class OrdersFragment : Fragment() {
     }
 
     private fun sincronizarComProgressao(pending: List<OrderDraftService.Draft>) {
+        val appContext = requireContext().applicationContext
         val progressDialog = AlertDialog.Builder(requireContext())
             .setTitle("📤 Sincronizando Pedidos")
             .setMessage("Conectando ao servidor...\nPor favor, aguarde...")
             .setCancelable(false)
             .show()
 
+        binding?.ordersSync?.isEnabled = false
         viewLifecycleOwner.lifecycleScope.launch {
-            // TODO: Implement actual sync using OrderSyncService
-            activity?.runOnUiThread {
-                progressDialog.dismiss()
-                val mensagem = "Sincronização concluída!\nEnviados: ${pending.size}\nErros: 0"
-                Toast.makeText(requireContext(), mensagem, Toast.LENGTH_LONG).show()
-                renderOrders()
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    OrderSyncService.sendPending(appContext, pending)
+                }
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                OrderSyncService.SendResult(
+                    sentCount = 0,
+                    failures = listOf(
+                        OrderSyncService.SyncFailure(
+                            mobileId = 0L,
+                            message = exception.message?.take(300)
+                                ?.ifBlank { "Falha inesperada ao sincronizar os pedidos." }
+                                ?: "Falha inesperada ao sincronizar os pedidos."
+                        )
+                    )
+                )
+            } finally {
+                if (progressDialog.isShowing) progressDialog.dismiss()
+                binding?.ordersSync?.isEnabled = true
             }
+
+            if (!isAdded || binding == null) return@launch
+            renderOrders()
+
+            val message = buildString {
+                append("Pedidos confirmados pelo ERP: ${result.sentCount}")
+                append("\nFalhas: ${result.failures.size}")
+                if (result.failures.isNotEmpty()) {
+                    append("\n\n")
+                    result.failures.take(5).forEachIndexed { index, failure ->
+                        if (index > 0) append("\n")
+                        if (failure.mobileId > 0L) append("Pedido ${failure.mobileId}: ")
+                        append(failure.message)
+                    }
+                    if (result.failures.size > 5) {
+                        append("\n... e mais ${result.failures.size - 5} falha(s).")
+                    }
+                }
+            }
+            val dialog = AlertDialog.Builder(requireContext())
+                .setTitle(
+                    if (result.failures.isEmpty()) "Sincronização confirmada"
+                    else "Sincronização incompleta"
+                )
+                .setMessage(message)
+                .setPositiveButton("OK", null)
+            val copyableFailures = result.failures.filter { !it.requestJson.isNullOrBlank() }
+            if (copyableFailures.isNotEmpty()) {
+                dialog.setNeutralButton("Copiar JSON") { _, _ ->
+                    chooseFailureJsonToCopy(copyableFailures)
+                }
+            }
+            dialog.show()
         }
+    }
+
+    private fun chooseFailureJsonToCopy(failures: List<OrderSyncService.SyncFailure>) {
+        if (failures.size == 1) {
+            copyFailureJson(failures.first())
+            return
+        }
+
+        val labels = failures.map { "Pedido ${it.mobileId}" }.toTypedArray()
+        AlertDialog.Builder(requireContext())
+            .setTitle("Escolha o pedido")
+            .setItems(labels) { _, index ->
+                failures.getOrNull(index)?.let(::copyFailureJson)
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun copyFailureJson(failure: OrderSyncService.SyncFailure) {
+        val requestJson = failure.requestJson ?: return
+        val clipboard = requireContext()
+            .getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        if (clipboard == null) {
+            Toast.makeText(requireContext(), "Não foi possível acessar a área de transferência.", Toast.LENGTH_LONG)
+                .show()
+            return
+        }
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText("JSON do pedido ${failure.mobileId}", requestJson)
+        )
+        Toast.makeText(
+            requireContext(),
+            "JSON copiado. Ele contém dados do cliente; compartilhe com cuidado.",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     private fun baixarPedidosDoERP() {
@@ -682,12 +918,15 @@ class OrdersFragment : Fragment() {
             val order = draft.json.optJSONObject("sdtPedidoAppVenda")
                 ?: throw IllegalStateException("O pedido não contém os dados necessários.")
             val preferences = requireContext().getSharedPreferences("forca_vendas", 0)
+            val clientId = firstValue(order, "PedidoEntidadeId").ifBlank { draft.clientId }
             val client = try {
                 val clients = JSONArray(preferences.getString("clients_synced_json", "[]") ?: "[]")
                 (0 until clients.length())
                     .asSequence()
                     .mapNotNull { clients.optJSONObject(it) }
-                    .firstOrNull { it.optString("EntidadeId") == draft.clientId }
+                    .firstOrNull {
+                        normalizeClientId(it.optString("EntidadeId")) == normalizeClientId(clientId)
+                    }
             } catch (_: Exception) {
                 null
             }
@@ -783,9 +1022,13 @@ class OrdersFragment : Fragment() {
                 val labels = listOf("Num.", "ItemProduto", "Qtde.", "Vlr. Item", "Total", "Peso Un", "Tot. Kg")
                 for (index in labels.indices) {
                     val left = columns[index]
-                    val width = columns[index + 1] - left
+                    val right = columns[index + 1]
                     val paint = Paint(headerPaint).apply { textSize = 11f }
-                    canvas!!.drawText(labels[index], left + 4f, baseline, paint)
+                    if (index == 1) {
+                        canvas!!.drawText(labels[index], left + 4f, baseline, paint)
+                    } else {
+                        drawRightAlignedText(labels[index], right - 4f, baseline, paint)
+                    }
                 }
                 y += height
             }
@@ -909,7 +1152,6 @@ class OrdersFragment : Fragment() {
             y = 66f
             val clientName = firstValue(order, "PedidoEntidadeNomeFantasia", "PedidoEntidadeNome")
                 .ifBlank { draft.clientName }
-            val clientId = firstValue(order, "PedidoEntidadeId").ifBlank { draft.clientId }
             val document = firstValue(order, "PedidoEntidadeCPFCNPJ")
                 .ifBlank { client?.optString("EntidadeCPFCNPJ").orEmpty() }
             val address = firstValue(order, "PedidoEntidadeEndereco")
@@ -921,13 +1163,26 @@ class OrdersFragment : Fragment() {
                 .ifBlank { client?.optString("EntidadeCidade").orEmpty() }
             val state = firstValue(order, "PedidoEntidadeUF")
                 .ifBlank { client?.optString("EntidadeUF").orEmpty() }
-            val postalCode = client?.optString("EntidadeCEP").orEmpty()
+            val stateRegistration = firstValue(
+                order,
+                "PedidoEntidadeInscEstadual",
+                "PedidoEntidadeInscricaoEstadual"
+            ).ifBlank {
+                firstValue(client, "EntidadeInscEstadual", "EntidadeInscricaoEstadual")
+            }
+            val postalCode = firstValue(
+                order,
+                "PedidoEntidadeCepCod",
+                "PedidoEntidadeCEP"
+            ).ifBlank {
+                firstValue(client, "EntidadeCepCod", "EntidadeCEP")
+            }
             val mediumTerm = firstValue(order, "PedidoCondicaoPgtoPrazoMedio")
             val saleType = firstValue(order, "PedidoTipoVenda")
             val infoRows = listOf(
                 "Cliente: $clientId - $clientName" to "CNPJ: $document",
                 "Endereço: ${listOf(address, addressNumber).filter { it.isNotBlank() }.joinToString(" - ")}" to
-                    "I.E.: ${client?.optString("EntidadeInscricaoEstadual").orEmpty()}",
+                    "I.E.: $stateRegistration",
                 "Bairro: $neighborhood" to "Cidade: $city    UF: $state",
                 "Cond.Pgto.: $paymentDescription" to "Médio: $mediumTerm",
                 "Tp. Venda: $saleType" to "CEP: $postalCode"

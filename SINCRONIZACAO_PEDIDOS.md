@@ -50,12 +50,12 @@ Estes botões são posicionados no topo do fragmento para fácil acesso.
 3. Se houver pendentes, exibe diálogo confirmando operação
    ↓
 4. Para cada pedido pendente:
-   - Envia JSON estruturado para a API do ERP
-   - Verifica se houve sucesso na resposta
-   - Se bem-sucedido, marca o pedido com o ID gerado pelo ERP
-   - Se falhar, continua com o próximo pedido
+   - Envia um POST com o JSON no formato `{"sdtPedidoAppVenda": <pedido>}`
+   - Exige confirmação `isError: false` e um ID positivo (`PedidoERPId` ou `PedidoId`) na resposta
+   - Só então marca o pedido como enviado e grava o ID do ERP
+   - Se falhar ou a resposta não trouxer o ID, continua com o próximo pedido e informa a falha
    ↓
-5. Ao final, exibe resumo com quantidade de pedidos enviados e erros
+5. Ao final, exibe quantos pedidos foram confirmados pelo ERP e detalha as falhas
    ↓
 6. Atualiza a lista de pedidos mostrando os novos status
 ```
@@ -103,6 +103,11 @@ Estes botões são posicionados no topo do fragmento para fácil acesso.
 }
 ```
 
+No JSON enviado, os campos `ItemPedidoPerICMSProduto`, `ItemPedidoPerReducaoICMS`,
+`ItemPedidoPerMVA`, `ItemPedidoPerICMSEstado` e `ItemPedidoTipoOperacaoPedId`
+vão como números, sem aspas. `PedidoEmpresaNome`, `ItemPedidoTipoIPI` e
+`ItemPedidoPerFCP` e `PedidoParcelas` são omitidos do envio; os dados locais do pedido são mantidos.
+
 ## Status do Pedido
 
 Após sincronização com sucesso, o pedido muda de status:
@@ -111,11 +116,16 @@ Após sincronização com sucesso, o pedido muda de status:
 
 O ID do ERP é exibido na lista de pedidos para referência.
 
+O ERP pode retornar, por exemplo, `{"PedidoId":"11019","isError":false,"outmsg":null}`.
+Nesse formato, `PedidoId` é salvo como o ID ERP do pedido.
+
 ## Tratamento de Erros
 
 - Se o envio falhar para um pedido, o sistema continua tentando os próximos
 - Erros de rede ou HTTP são capturados e contabilizados
-- O usuário recebe um resumo final com sucesso/erro para cada tentativa
+- Uma resposta HTTP bem-sucedida, sem confirmação `isError: false` e sem ID positivo, não é exibida como pedido sincronizado
+- Em caso de timeout, o ERP pode ter processado o pedido sem a resposta chegar ao app; verifique o ERP antes de reenviar
+- O usuário recebe o resumo das confirmações e das falhas
 - Pedidos não enviados continuam disponíveis para tentar novamente
 
 ## Integração com AutoSyncManager

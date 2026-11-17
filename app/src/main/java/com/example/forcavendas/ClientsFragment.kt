@@ -239,6 +239,8 @@ class ClientsFragment : Fragment() {
                 orientation = LinearLayout.HORIZONTAL
             }
 
+            val hasOverdueBalance = client.overdueBalance.replace(",", ".")
+                .toDoubleOrNull()?.let { it > 0.0 } ?: false
             buttons.addView(clientButton("Consultar produtos", client.id, {
                 val arguments = Bundle().apply {
                     putString("client_id", client.id)
@@ -246,9 +248,7 @@ class ClientsFragment : Fragment() {
                     putString("client_region_id", client.regionId)
                 }
                 findNavController().navigate(R.id.action_ClientsFragment_to_ClientProductsFragment, arguments)
-            }))
-            val hasOverdueBalance = client.overdueBalance.replace(",", ".")
-                .toDoubleOrNull()?.let { it > 0.0 } ?: false
+            }, hasOverdueBalance))
             buttons.addView(clientButton("Financeiro", client.id, {
                 val arguments = Bundle().apply { putString("client_id", client.id) }
                 findNavController().navigate(R.id.action_ClientsFragment_to_FinancialFragment, arguments)
@@ -326,7 +326,17 @@ class ClientsFragment : Fragment() {
             setTextColor(resources.getColor(R.color.white, requireContext().theme))
         }
         cornerRadius = dp(10)
-        setOnClickListener { onClick() }
+        setOnClickListener {
+            if (label == "Consultar produtos" && hasOverdueBalance) {
+                Toast.makeText(
+                    requireContext(),
+                    "Operação não permitida para esse cliente!",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@setOnClickListener
+            }
+            onClick()
+        }
     }
 
     private fun showAddClientDialog() {
