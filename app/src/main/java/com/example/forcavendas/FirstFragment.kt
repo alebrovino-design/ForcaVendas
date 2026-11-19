@@ -38,6 +38,7 @@ class FirstFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        binding.appVersion.text = getString(R.string.app_version, BuildConfig.VERSION_NAME)
         val preferences = requireContext().getSharedPreferences(PREFERENCES_NAME, 0)
         val isLoggedIn = preferences.getBoolean("logged_in", false)
         val cachedUserId = preferences.getString("user_id", null)
@@ -49,12 +50,9 @@ class FirstFragment : Fragment() {
         binding.buttonFirst.setOnClickListener {
             val username = binding.editUsername.text?.toString()?.trim().orEmpty()
             val password = binding.editPassword.text?.toString().orEmpty()
-            val license = binding.editLicense.text?.toString()?.trim().orEmpty()
-
             var isValid = true
             binding.usernameLayout.error = null
             binding.passwordLayout.error = null
-            binding.licenseLayout.error = null
 
             if (username.isEmpty()) {
                 binding.usernameLayout.error = getString(R.string.login_required_username)
@@ -62,10 +60,6 @@ class FirstFragment : Fragment() {
             }
             if (password.isEmpty()) {
                 binding.passwordLayout.error = getString(R.string.login_required_password)
-                isValid = false
-            }
-            if (license.isEmpty()) {
-                binding.licenseLayout.error = getString(R.string.login_required_license)
                 isValid = false
             }
             if (!isValid) return@setOnClickListener
@@ -77,7 +71,7 @@ class FirstFragment : Fragment() {
                     Handler(Looper.getMainLooper()).post {
                         if (!isAdded) return@post
                         if (result.success) {
-                            cacheAuthenticatedUser(username, password, license, result.userId)
+                            cacheAuthenticatedUser(username, password, result.userId)
                             SessionManager.bindCurrentSession(requireContext())
                             binding.editPassword.text?.clear()
                             findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment)
@@ -88,11 +82,12 @@ class FirstFragment : Fragment() {
                         }
                     }
                 } catch (_: IOException) {
-                    val offlineAuthorized = authenticateOffline(username, password, license)
+                    val offlineAuthorized = authenticateOffline(username, password)
                     Handler(Looper.getMainLooper()).post {
                         if (!isAdded) return@post
                         setLoading(false)
                         if (offlineAuthorized) {
+                            SessionManager.useDefaultLicense(requireContext())
                             SessionManager.bindCurrentSession(requireContext())
                             binding.editPassword.text?.clear()
                             findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment)
@@ -119,20 +114,18 @@ class FirstFragment : Fragment() {
         )
         binding.usernameLayout.isEnabled = !loading
         binding.passwordLayout.isEnabled = !loading
-        binding.licenseLayout.isEnabled = !loading
     }
 
     private fun cacheAuthenticatedUser(
         username: String,
         password: String,
-        license: String,
         userId: String?
     ) {
         val salt = ByteArray(16).also(SecureRandom()::nextBytes)
         val preferences = requireContext().getSharedPreferences(PREFERENCES_NAME, 0)
         preferences.edit()
             .putString("username", username)
-            .putString("license", license)
+            .putString("license", SessionManager.DEFAULT_LICENSE)
             .putString("user_id", userId)
             .putBoolean("logged_in", true)
             .putString("password_salt", Base64.encodeToString(salt, Base64.NO_WRAP))
@@ -140,16 +133,15 @@ class FirstFragment : Fragment() {
             .apply()
     }
 
-    private fun authenticateOffline(username: String, password: String, license: String): Boolean {
+    private fun authenticateOffline(username: String, password: String): Boolean {
         val preferences = requireContext().getSharedPreferences(PREFERENCES_NAME, 0)
         val cachedUsername = preferences.getString("username", null) ?: return false
-        val cachedLicense = preferences.getString("license", null) ?: return false
+        preferences.getString("license", null) ?: return false
         val saltEncoded = preferences.getString("password_salt", null) ?: return false
         val expectedHash = preferences.getString("password_hash", null) ?: return false
         val salt = Base64.decode(saltEncoded, Base64.NO_WRAP)
 
         return cachedUsername == username &&
-            cachedLicense == license &&
             MessageDigest.isEqual(
                 Base64.decode(expectedHash, Base64.NO_WRAP),
                 Base64.decode(hashPassword(password, salt), Base64.NO_WRAP)

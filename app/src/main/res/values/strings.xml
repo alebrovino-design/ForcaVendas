@@ -20,7 +20,7 @@
     <string name="login_required_username">Informe o usuário</string>
     <string name="login_required_password">Informe a senha</string>
     <string name="login_required_license">Informe a licença</string>
-    <string name="app_version">Versão 1.0</string>
+    <string name="app_version">Versão %1$s</string>
     <string name="menu_title">Meu painel</string>
     <string name="menu_orders">Pedidos</string>
     <string name="menu_products">Produtos</string>
@@ -30,6 +30,8 @@
     <string name="target_title">Metas do mês</string>
     <string name="target_label">Meta a atingir</string>
     <string name="achieved_label">Meta atingida</string>
+    <string name="show_bonus_demonstrative">Mostrar pesquisa e demonstrativo</string>
+    <string name="hide_bonus_demonstrative">Ocultar pesquisa e demonstrativo</string>
 
     <string name="lorem_ipsum">
         Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam in scelerisque sem. Mauris

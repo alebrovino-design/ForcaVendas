@@ -10,8 +10,8 @@ import java.net.URLEncoder
 object TargetService {
     private const val ENDPOINT =
         "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpmetaporrepreappvenda"
-    private const val TOKEN =
-        "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+    private val TOKEN =
+        BuildConfig.ERP_TEST_TOKEN
 
     data class TargetData(
         val target: Double,

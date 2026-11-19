@@ -209,7 +209,7 @@ class SyncFragment : Fragment() {
                     val userId = preferences.getString("user_id", "") ?: ""
                     if (userId.isBlank()) throw Exception("Código do representante não disponível")
 
-                    val token = "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+                    val token = BuildConfig.ERP_TEST_TOKEN
                     val endpoint =
                         "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpMovFinanceiroRepAPPVenda" +
                             "?Usuarioid=${URLEncoder.encode(userId, "UTF-8")}" +
@@ -286,7 +286,7 @@ class SyncFragment : Fragment() {
                     val userId = preferences.getString("user_id", "") ?: ""
                     if (userId.isBlank()) throw Exception("Código do representante não disponível")
 
-                    val token = "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+                    val token = BuildConfig.ERP_TEST_TOKEN
                     val endpoint = "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpEntidadeRepAPPVenda" +
                         "?Usuarioid=${URLEncoder.encode(userId, "UTF-8")}" +
                         "&Parametrostegaceptoken=${URLEncoder.encode(token, "UTF-8")}"
@@ -656,7 +656,7 @@ class SyncFragment : Fragment() {
 
         thread {
             try {
-                val token = "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+                val token = BuildConfig.ERP_TEST_TOKEN
                 val endpoint =
                     "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpEmpresaAPPVenda" +
                         "?Parametrostegaceptoken=${URLEncoder.encode(token, "UTF-8")}"
@@ -710,7 +710,7 @@ class SyncFragment : Fragment() {
 
         thread {
             try {
-                val token = "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+                val token = BuildConfig.ERP_TEST_TOKEN
                 val endpoint =
                     "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpTipoOpPedidoCompletaAPPVenda" +
                         "?Parametrostegaceptoken=${URLEncoder.encode(token, "UTF-8")}"
@@ -759,7 +759,7 @@ class SyncFragment : Fragment() {
 
         thread {
             try {
-                val token = "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+                val token = BuildConfig.ERP_TEST_TOKEN
                 val endpoint =
                     "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpCondicaoPgtoAPPVendaVlrMin" +
                         "?Parametrostegaceptoken=${URLEncoder.encode(token, "UTF-8")}"
@@ -804,7 +804,7 @@ class SyncFragment : Fragment() {
                 val userId = preferences.getString("user_id", "") ?: ""
                 if (userId.isBlank()) throw Exception("Código do representante não disponível")
 
-                val token = "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+                val token = BuildConfig.ERP_TEST_TOKEN
                 val endpoint =
                     "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpCargaRepresentanteAppVenda" +
                         "?Parametrostegaceptoken=${URLEncoder.encode(token, "UTF-8")}" +
@@ -891,7 +891,7 @@ class SyncFragment : Fragment() {
         thread {
             try {
                 val endpoint = "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpProdutoAPPVenda" +
-                    "?Parametrostegaceptoken=dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+                    "?Parametrostegaceptoken=${URLEncoder.encode(BuildConfig.ERP_TEST_TOKEN, "UTF-8")}"
                 val connection = URL(endpoint).openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 15_000

@@ -71,9 +71,11 @@
         app:layout_constraintTop_toBottomOf="@id/client_products_header">
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/client_products_search_layout"
             style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:hint="Pesquisar produto"
             app:boxBackgroundColor="@color/login_field"
             app:hintTextColor="@color/text_primary">
@@ -103,14 +105,35 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <LinearLayout
-            android:id="@+id/client_products_bonus_summary"
+            android:id="@+id/client_products_bonus_panel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:background="@color/login_field"
             android:padding="10dp"
             android:orientation="vertical"
-            android:visibility="gone" />
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/client_products_bonus_summary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/client_products_demonstrative_toggle"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="8dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="@string/hide_bonus_demonstrative"
+                android:textAllCaps="false"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp"
+                app:backgroundTint="@color/button_light_blue"
+                app:cornerRadius="10dp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/client_products_message"

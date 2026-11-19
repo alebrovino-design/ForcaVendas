@@ -43,6 +43,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class OrdersFragment : Fragment() {
+    private companion object {
+        const val ORDERS_PAGE_SIZE = 20
+    }
     private var binding: FragmentOrdersBinding? = null
     private var renderJob: Job? = null
     private var loadedOrders: List<OrderDraftService.Draft> = emptyList()
@@ -100,9 +103,10 @@ class OrdersFragment : Fragment() {
         }
     }
 
-    private fun renderFilteredOrders() {
+    private fun renderFilteredOrders(limit: Int = ORDERS_PAGE_SIZE) {
         val list = binding?.ordersList ?: return
         val message = binding?.ordersMessage ?: return
+        cachedPriceItems = null
         val clientQuery = clientSearchFilter.trim().lowercase(Locale.ROOT)
         val filteredOrders = loadedOrders.filter { draft ->
             val matchesClient = clientQuery.isBlank() || listOf(
@@ -125,8 +129,20 @@ class OrdersFragment : Fragment() {
             "Nenhum pedido encontrado com esses filtros."
         }
         message.visibility = if (filteredOrders.isEmpty()) View.VISIBLE else View.GONE
-        filteredOrders.forEach { draft -> renderOrderCard(list, draft) }
+        filteredOrders.take(limit).forEach { draft -> renderOrderCard(list, draft) }
+        if (filteredOrders.size > limit) {
+            list.addView(com.google.android.material.button.MaterialButton(requireContext()).apply {
+                text = "Carregar mais (${filteredOrders.size - limit} restantes)"
+                isAllCaps = false
+                setOnClickListener { renderFilteredOrders(limit + ORDERS_PAGE_SIZE) }
+            })
+        }
     }
+
+    private var cachedPriceItems: JSONArray? = null
+
+    private fun priceItems(): JSONArray =
+        cachedPriceItems ?: PriceTableItemService.load(requireContext()).also { cachedPriceItems = it }
 
     private fun showOrderSearchDialog() {
         val context = requireContext()
@@ -388,7 +404,7 @@ class OrdersFragment : Fragment() {
         ).ifBlank { draft.cachedRegionDescription }
             .ifBlank {
                 if (isErp) "" else {
-                    val priceItems = PriceTableItemService.load(requireContext())
+                    val priceItems = priceItems()
                     (0 until priceItems.length())
                         .asSequence()
                         .mapNotNull { priceItems.optJSONObject(it) }
@@ -445,13 +461,55 @@ class OrdersFragment : Fragment() {
             generateOrderPdf(draft)
         })
 
-        buttonsContainer.addView(createFullButton("Gerar JSON do pedido") {
-            generateOrderJson(draft)
-        })
+        if (!isErp && draft.mobileId > 0L) {
+            buttonsContainer.addView(createFullButton("Excluir pedido", isRed = true) {
+                confirmDeletePendingOrder(draft)
+            })
+        }
 
         content.addView(buttonsContainer)
         card.addView(content)
         list.addView(card)
+    }
+
+    private fun confirmDeletePendingOrder(draft: OrderDraftService.Draft) {
+        AlertDialog.Builder(requireContext())
+            .setTitle("Excluir pedido ${draft.mobileId}?")
+            .setMessage(
+                "O pedido será removido apenas deste aparelho. Se houve falha ou tempo limite no envio, " +
+                    "verifique no ERP antes de excluir: ele pode ter sido recebido."
+            )
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Excluir") { _, _ ->
+                val appContext = requireContext().applicationContext
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        val result = withContext(Dispatchers.IO) {
+                            OrderDraftService.removePending(appContext, draft.mobileId)
+                        }
+                        if (!isAdded || binding == null) return@launch
+                        val message = when (result) {
+                            OrderDraftService.RemoveResult.REMOVED -> "Pedido excluído."
+                            OrderDraftService.RemoveResult.NOT_FOUND -> "Pedido não encontrado."
+                            OrderDraftService.RemoveResult.ALREADY_SENT -> "Pedido já enviado ao ERP; não pode ser excluído."
+                            OrderDraftService.RemoveResult.SENDING -> "Pedido em envio; aguarde a conclusão."
+                        }
+                        Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
+                        renderOrders()
+                    } catch (exception: Exception) {
+                        if (exception is CancellationException) throw exception
+                        android.util.Log.e("OrdersFragment", "Não foi possível excluir o pedido", exception)
+                        if (isAdded && binding != null) {
+                            Toast.makeText(
+                                requireContext(),
+                                "Não foi possível excluir o pedido: ${exception.message.orEmpty()}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }
+            }
+            .show()
     }
 
     private fun createFieldColumn(label: String, value: String): View {
@@ -487,7 +545,12 @@ class OrdersFragment : Fragment() {
             setText(text)
             isAllCaps = false
             textSize = 13f
-            setTextColor(android.graphics.Color.WHITE)
+            setTextColor(
+                resources.getColor(
+                    if (isRed) R.color.white else R.color.text_primary,
+                    requireContext().theme
+                )
+            )
             backgroundTintList = android.content.res.ColorStateList.valueOf(
                 if (isRed) resources.getColor(R.color.financial_red, requireContext().theme)
                 else resources.getColor(R.color.button_light_blue, requireContext().theme)
@@ -732,14 +795,42 @@ class OrdersFragment : Fragment() {
             return
         }
 
+        val labels = pending.map { draft ->
+            val name = draft.clientFantasyName.ifBlank { draft.clientReasonName }
+                .ifBlank { draft.clientName }.ifBlank { "Cliente ${draft.clientId}" }
+            "Pedido ${draft.mobileId} - $name\n" +
+                java.text.NumberFormat.getCurrencyInstance(Locale("pt", "BR")).format(draft.total)
+        }.toTypedArray()
+        val checked = BooleanArray(pending.size) { true }
+
         val dialog = AlertDialog.Builder(requireContext())
-            .setTitle("📤 Sincronizar Pedidos")
-            .setMessage("Deseja sincronizar ${pending.size} pedido(s) pendente(s)?")
-            .setPositiveButton("Sincronizar") { _, _ ->
-                sincronizarComProgressao(pending)
+            .setTitle("📤 Selecione os pedidos a enviar")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                checked[which] = isChecked
             }
+            .setPositiveButton("Enviar", null)
+            .setNeutralButton("Desmarcar todos", null)
             .setNegativeButton("Cancelar", null)
-            .show()
+            .create()
+        dialog.show()
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val selected = pending.filterIndexed { index, _ -> checked[index] }
+            if (selected.isEmpty()) {
+                Toast.makeText(requireContext(), "Marque ao menos um pedido para enviar", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            dialog.dismiss()
+            sincronizarComProgressao(selected)
+        }
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            val markAll = checked.none { it }
+            val list = dialog.listView
+            for (index in checked.indices) {
+                checked[index] = markAll
+                list.setItemChecked(index, markAll)
+            }
+            (it as android.widget.Button).text = if (markAll) "Desmarcar todos" else "Marcar todos"
+        }
     }
 
     private fun sincronizarComProgressao(pending: List<OrderDraftService.Draft>) {
@@ -1304,22 +1395,6 @@ class OrdersFragment : Fragment() {
         java.text.DecimalFormat("#,##0.000", java.text.DecimalFormatSymbols(Locale("pt", "BR"))).format(value)
 
     private fun formatPdfCurrency(value: Double): String = "R$ ${formatPdfNumber(value)}"
-
-    private fun generateOrderJson(draft: OrderDraftService.Draft) {
-        try {
-            android.util.Log.d("OrdersFragment", "Compartilhando JSON para pedido ${draft.mobileId}")
-            
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, draft.json.toString(2))
-                putExtra(Intent.EXTRA_SUBJECT, "Pedido ${draft.mobileId}")
-            }
-            startActivity(Intent.createChooser(intent, "Compartilhar JSON"))
-        } catch (e: Exception) {
-            android.util.Log.e("OrdersFragment", "Erro ao compartilhar JSON", e)
-            Toast.makeText(requireContext(), "Erro ao gerar JSON: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
 
     private fun openPdf(file: File) {
         val uri = FileProvider.getUriForFile(

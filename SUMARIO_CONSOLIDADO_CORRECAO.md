@@ -31,7 +31,7 @@ Arquivo novo que centraliza gerenciamento do token ERP:
 object ERPConfig {
     // Token ERP real (não session_signature)
     private const val DEFAULT_ERP_TOKEN = 
-        "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+        "<TOKEN_ERP>"
     
     fun getERPToken(context: Context): String  // Obtém token
     fun setERPToken(context: Context, token: String)  // Define token

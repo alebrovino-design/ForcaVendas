@@ -12,7 +12,7 @@ Restaurei o LoadsFragment para EXATAMENTE como estava em v4 (commit 574620e), co
 ### Mudanças Mínimas (v4 → v10):
 ```kotlin
 // ANTES (v4 - hardcoded):
-val token = "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+val token = "<TOKEN_ERP>"
 "&Usuarioid=${URLEncoder.encode(userId, "UTF-8")}"
 
 // DEPOIS (v10 - centralizado + parâmetro correto):

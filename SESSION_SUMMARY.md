@@ -285,7 +285,7 @@ D:\Projeto\ForcaVendas\
 ### ⚠️ Token Hardcoded
 O token ERP ainda está hardcoded em `ERPConfig.kt`:
 ```kotlin
-private const val DEFAULT_ERP_TOKEN = "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+private const val DEFAULT_ERP_TOKEN = "<TOKEN_ERP>"
 ```
 
 **Em produção, DEVE:**

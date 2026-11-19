@@ -10,8 +10,8 @@ import java.net.URL
 object ClientCreateService {
     private const val CREATE_URL =
         "https://erpgnisn.specialnutri.com.br/specialnutri/rest/postClienteAppVenda"
-    private const val TOKEN =
-        "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+    private val TOKEN =
+        BuildConfig.ERP_TEST_TOKEN
 
     fun create(client: JSONObject): String {
         val endpoint = CREATE_URL +

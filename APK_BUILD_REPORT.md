@@ -1,5 +1,14 @@
 # 📦 APK Build Report - Força de Vendas
 
+## Versionamento automático
+
+O contador em `app/version.properties` é incrementado ao solicitar tarefas de
+geração, como `:app:assembleDebug`. Ele determina o `versionCode` e a versão
+visível `1.0.x`; uma tentativa de compilação que falhe também pode consumir um
+número. Mantenha e compartilhe esse arquivo com o código para que outras
+máquinas não reutilizem versões antigas. O configuration cache deve permanecer
+desativado para essas tarefas.
+
 **Data:** 12 de Novembro de 2026
 **Versão:** Debug Build
 **Status:** ✅ BUILD SUCCESSFUL
@@ -111,7 +120,7 @@ adb logcat | findstr "ForcaVendas|ERP|ERPOrder"
 ### Test API Endpoint
 ```
 GET https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpPedidoVendaRepAPPVenda
-?Parametrostegaceptoken=dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg==
+?Parametrostegaceptoken=<TOKEN_ERP>
 &Representanteid=10418
 ```
 

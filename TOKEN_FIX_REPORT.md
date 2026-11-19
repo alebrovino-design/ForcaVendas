@@ -32,7 +32,7 @@ Centralized configuration para gerenciar o token ERP:
 object ERPConfig {
     // Token ERP real (não confundir com session_signature)
     private const val DEFAULT_ERP_TOKEN = 
-        "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+        "<TOKEN_ERP>"
     
     fun getERPToken(context: Context): String
     fun setERPToken(context: Context, token: String): Unit
@@ -116,7 +116,7 @@ ERPOrderDownloadService.downloadOrders()
 ### 4️⃣ **API é chamada com tokens CORRETOS**
 ```
 GET https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpPedidoVendaRepAPPVenda
-    ?Parametrostegaceptoken=dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg==
+    ?Parametrostegaceptoken=<TOKEN_ERP>
     &Representanteid=10418
 ```
 
@@ -148,7 +148,7 @@ GET https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpPedidoVendaRepAPPVe
 ```kotlin
 object ERPConfig {
     private const val DEFAULT_ERP_TOKEN = 
-        "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+        "<TOKEN_ERP>"
     
     fun getERPToken(context: Context): String {
         val preferences = context.getSharedPreferences("forca_vendas", 0)

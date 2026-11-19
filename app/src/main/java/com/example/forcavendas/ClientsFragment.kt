@@ -1,4 +1,4 @@
-package com.example.forcavendas
+﻿package com.example.forcavendas
 
 import android.os.Bundle
 import android.os.Handler
@@ -33,30 +33,47 @@ import kotlin.concurrent.thread
 import java.net.HttpURLConnection
 import java.net.URL
 
+internal data class Client(
+    val id: String,
+    val companyId: String,
+    val consumerFinal: Boolean,
+    val cnpjCpf: String,
+    val fantasyName: String,
+    val reasonName: String,
+    val address: String,
+    val addressNumber: String,
+    val neighborhood: String,
+    val postalCode: String,
+    val city: String,
+    val state: String,
+    val openBalance: String,
+    val overdueBalance: String,
+    val clientDiscount: String,
+    val regionId: String
+)
+
+internal fun filterClients(clients: List<Client>, search: String): List<Client> {
+    val normalized = search.trim().lowercase()
+    if (normalized.isBlank()) return clients
+    return clients.filter { client ->
+        val address = client.address +
+            client.addressNumber.takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty() +
+            client.neighborhood.takeIf { it.isNotBlank() }?.let { " - $it" }.orEmpty()
+        client.id.lowercase().contains(normalized) ||
+            client.companyId.lowercase().contains(normalized) ||
+            client.cnpjCpf.lowercase().contains(normalized) ||
+            client.fantasyName.lowercase().contains(normalized) ||
+            client.reasonName.lowercase().contains(normalized) ||
+            client.city.lowercase().contains(normalized) ||
+            address.lowercase().contains(normalized)
+    }
+}
+
 class ClientsFragment : Fragment() {
     private var binding: FragmentClientsBinding? = null
     private var clients = listOf<Client>()
     private val searchHandler = Handler(Looper.getMainLooper())
     private var searchRunnable: Runnable? = null
-
-    private data class Client(
-        val id: String,
-        val companyId: String,
-        val consumerFinal: Boolean,
-        val cnpjCpf: String,
-        val fantasyName: String,
-        val reasonName: String,
-        val address: String,
-        val addressNumber: String,
-        val neighborhood: String,
-        val postalCode: String,
-        val city: String,
-        val state: String,
-        val openBalance: String,
-        val overdueBalance: String,
-        val clientDiscount: String,
-        val regionId: String
-    )
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -78,7 +95,7 @@ class ClientsFragment : Fragment() {
                 val query = s?.toString().orEmpty()
                 searchRunnable = Runnable {
                     if (!isAdded) return@Runnable
-                    showClients(filterClients(query))
+                    showClients(filterClients(clients, query))
                 }
                 searchHandler.postDelayed(searchRunnable!!, 180)
             }
@@ -107,7 +124,7 @@ class ClientsFragment : Fragment() {
                     if (!isAdded) return@post
                     binding?.clientsProgress?.visibility = View.GONE
                     clients = loaded
-                    showClients(clients)
+                    showClients(filterClients(clients, binding?.clientsSearch?.text?.toString().orEmpty()))
                 }
             } catch (_: Exception) {
                 Handler(Looper.getMainLooper()).post {
@@ -150,18 +167,6 @@ class ClientsFragment : Fragment() {
                 clientDiscount = item.optString("EntidadePerDescoCliente").takeUnless { it.isBlank() } ?: "0",
                 regionId = item.optString("EntidadeRegiaoId").takeUnless { it.isBlank() } ?: "0"
             )
-        }
-    }
-
-    private fun filterClients(search: String): List<Client> {
-        val normalized = search.trim().lowercase()
-        if (normalized.isBlank()) return clients
-        return clients.filter {
-            it.id.lowercase().contains(normalized) ||
-                it.companyId.lowercase().contains(normalized) ||
-                it.cnpjCpf.lowercase().contains(normalized) ||
-                it.fantasyName.lowercase().contains(normalized) ||
-                it.reasonName.lowercase().contains(normalized)
         }
     }
 
@@ -241,7 +246,7 @@ class ClientsFragment : Fragment() {
 
             val hasOverdueBalance = client.overdueBalance.replace(",", ".")
                 .toDoubleOrNull()?.let { it > 0.0 } ?: false
-            buttons.addView(clientButton("Consultar produtos", client.id, {
+            buttons.addView(clientButton("Efetuar pedido", client.id, {
                 val arguments = Bundle().apply {
                     putString("client_id", client.id)
                     putString("client_name", client.fantasyName.ifBlank { client.reasonName })
@@ -307,7 +312,7 @@ class ClientsFragment : Fragment() {
         hasOverdueBalance: Boolean = false
     ): MaterialButton = MaterialButton(requireContext()).apply {
         layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply {
-            marginEnd = if (label == "Consultar produtos") dp(6) else 0
+            marginEnd = if (label == "Efetuar pedido") dp(6) else 0
             marginStart = if (label == "Financeiro") dp(6) else 0
         }
         text = label
@@ -315,19 +320,19 @@ class ClientsFragment : Fragment() {
         val color = when {
             label == "Financeiro" && hasOverdueBalance -> R.color.financial_red
             label == "Financeiro" -> R.color.financial_green
-            label == "Consultar produtos" -> R.color.button_light_blue
+            label == "Efetuar pedido" -> R.color.button_light_blue
             else -> R.color.login_button
         }
         setBackgroundColor(resources.getColor(color, requireContext().theme))
         backgroundTintList = ColorStateList.valueOf(resources.getColor(color, requireContext().theme))
-        if (label == "Consultar produtos") {
+        if (label == "Efetuar pedido") {
             setTextColor(resources.getColor(R.color.text_primary, requireContext().theme))
         } else {
             setTextColor(resources.getColor(R.color.white, requireContext().theme))
         }
         cornerRadius = dp(10)
         setOnClickListener {
-            if (label == "Consultar produtos" && hasOverdueBalance) {
+            if (label == "Efetuar pedido" && hasOverdueBalance) {
                 Toast.makeText(
                     requireContext(),
                     "Operação não permitida para esse cliente!",

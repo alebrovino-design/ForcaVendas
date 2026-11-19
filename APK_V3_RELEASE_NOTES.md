@@ -101,7 +101,7 @@ Sem alterações na schema:
 **Token ERP:** Centralizado em `ERPConfig.kt`
 ```kotlin
 // Padrão (hardcoded):
-dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg==
+<TOKEN_ERP>
 
 // Separado de session_signature (autenticação local)
 // Separado de user_id (parâmetro Representanteid)

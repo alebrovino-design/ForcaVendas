@@ -12,8 +12,8 @@ import java.net.URL
 object OrderSyncService {
     private const val SYNC_URL =
         "https://erpgnisn.specialnutri.com.br/specialnutri/rest/postPedidoAppVenda"
-    private const val TOKEN =
-        "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+    private val TOKEN =
+        BuildConfig.ERP_TEST_TOKEN
 
     data class SyncFailure(
         val mobileId: Long,
@@ -109,39 +109,72 @@ object OrderSyncService {
                 continue
             }
 
-            val response = try {
-                postRequest(requestJson)
+            val canSend = try {
+                OrderDraftService.beginSending(context, draft.mobileId)
             } catch (exception: Exception) {
                 failures.add(
                     SyncFailure(
                         draft.mobileId,
-                        timeoutMessage(exception) ?: exception.message?.take(300).orEmpty()
-                            .ifBlank { "Falha ao enviar ao ERP." },
-                        requestJson
+                        exception.message?.take(300).orEmpty()
+                            .ifBlank { "Não foi possível verificar o pedido antes do envio." }
                     )
                 )
                 continue
             }
-
-            if (!wasSynchronized(response)) {
-                failures.add(SyncFailure(draft.mobileId, responseMessage(response), requestJson))
+            if (!canSend) {
+                failures.add(SyncFailure(draft.mobileId, "Pedido não está mais pendente ou já está sendo enviado."))
                 continue
             }
 
-            val erpId = extractErpId(response)
-            if (erpId <= 0L) {
-                failures.add(
-                    SyncFailure(
-                        draft.mobileId,
-                        "O ERP respondeu sem um PedidoERPId válido. Verifique no ERP antes de reenviar para evitar duplicidade.",
-                        requestJson
+            try {
+                val response = try {
+                    postRequest(requestJson)
+                } catch (exception: Exception) {
+                    failures.add(
+                        SyncFailure(
+                            draft.mobileId,
+                            timeoutMessage(exception) ?: exception.message?.take(300).orEmpty()
+                                .ifBlank { "Falha ao enviar ao ERP." },
+                            requestJson
+                        )
                     )
-                )
-                continue
-            }
+                    continue
+                }
 
-            OrderDraftService.markSent(context, draft.mobileId, erpId)
-            sent++
+                if (!wasSynchronized(response)) {
+                    failures.add(SyncFailure(draft.mobileId, responseMessage(response), requestJson))
+                    continue
+                }
+
+                val erpId = extractErpId(response)
+                if (erpId <= 0L) {
+                    failures.add(
+                        SyncFailure(
+                            draft.mobileId,
+                            "O ERP respondeu sem um PedidoERPId válido. Verifique no ERP antes de reenviar para evitar duplicidade.",
+                            requestJson
+                        )
+                    )
+                    continue
+                }
+
+                try {
+                    OrderDraftService.markSent(context, draft.mobileId, erpId)
+                } catch (exception: Exception) {
+                    failures.add(
+                        SyncFailure(
+                            draft.mobileId,
+                            "O ERP confirmou o pedido $erpId, mas não foi possível salvar a confirmação. Verifique no ERP antes de reenviar ou excluir.",
+                            requestJson
+                        )
+                    )
+                    android.util.Log.e("OrderSyncService", "Falha ao salvar confirmação do pedido", exception)
+                    continue
+                }
+                sent++
+            } finally {
+                OrderDraftService.endSending(draft.mobileId)
+            }
         }
 
         return SendResult(sent, failures)
@@ -226,6 +259,7 @@ object OrderSyncService {
         val outgoingOrder = JSONObject(order.toString())
         outgoingOrder.remove("PedidoEmpresaNome")
         outgoingOrder.remove("PedidoParcelas")
+        outgoingOrder.remove("PedidoEntidadeNomeRazao")
 
         val items = outgoingOrder.optJSONArray("ItemPedido") ?: return outgoingOrder
         val decimalFields = listOf(

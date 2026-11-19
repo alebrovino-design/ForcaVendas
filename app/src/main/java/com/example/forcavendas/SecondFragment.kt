@@ -2,6 +2,7 @@ package com.example.forcavendas
 
 import android.os.Bundle
 import androidx.fragment.app.Fragment
+import androidx.appcompat.app.AppCompatDelegate
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -15,6 +16,9 @@ import java.text.NumberFormat
 import android.net.Uri
 import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.card.MaterialCardView
+import android.widget.ImageView
+import android.widget.TextView
 
 /**
  * A simple [Fragment] subclass as the second destination in the navigation.
@@ -64,6 +68,17 @@ class SecondFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         val preferences = requireContext().getSharedPreferences("forca_vendas", 0)
+        binding.menuAppVersion.text = getString(R.string.app_version, BuildConfig.VERSION_NAME)
+        var darkMenu = preferences.getBoolean("dashboard_dark_mode", false)
+        applyMenuAppearance(darkMenu)
+        binding.menuThemeButton.setOnClickListener {
+            darkMenu = !darkMenu
+            preferences.edit().putBoolean("dashboard_dark_mode", darkMenu).apply()
+            applyMenuAppearance(darkMenu)
+            AppCompatDelegate.setDefaultNightMode(
+                if (darkMenu) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+            )
+        }
         val username = preferences.getString("username", "Usuário")
         val userId = preferences.getString("user_id", null)
         val license = preferences.getString("license", "") ?: ""
@@ -181,6 +196,42 @@ class SecondFragment : Fragment() {
         binding.menuSync.setOnClickListener {
             findNavController().navigate(R.id.action_SecondFragment_to_SyncFragment)
         }
+    }
+
+    private fun applyMenuAppearance(dark: Boolean) {
+        fun color(light: Int, darkColor: Int): Int =
+            resources.getColor(if (dark) darkColor else light, requireContext().theme)
+
+        val background = color(R.color.dashboard_background_light, R.color.dashboard_background_dark)
+        val surface = color(R.color.dashboard_surface_light, R.color.dashboard_surface_dark)
+        val primary = color(R.color.dashboard_text_light, R.color.dashboard_text_dark)
+        val secondary = color(R.color.dashboard_secondary_light, R.color.dashboard_secondary_dark)
+        val accent = color(R.color.dashboard_accent_light, R.color.dashboard_accent_dark)
+        val stroke = color(R.color.dashboard_stroke_light, R.color.dashboard_stroke_dark)
+
+        binding.root.setBackgroundColor(background)
+        binding.menuThemeButton.text = if (dark) "Claro" else "Escuro"
+        binding.menuThemeButton.contentDescription =
+            if (dark) "Ativar aparência clara do aplicativo" else "Ativar aparência escura do aplicativo"
+
+        fun applyTo(view: View) {
+            when (view.tag) {
+                "dashboard_surface" -> (view as MaterialCardView).apply {
+                    setCardBackgroundColor(surface)
+                    strokeColor = stroke
+                }
+                "dashboard_primary" -> (view as TextView).setTextColor(primary)
+                "dashboard_secondary" -> (view as TextView).setTextColor(secondary)
+                "dashboard_accent" -> when (view) {
+                    is TextView -> view.setTextColor(accent)
+                    is ImageView -> view.imageTintList = android.content.res.ColorStateList.valueOf(accent)
+                }
+            }
+            if (view is ViewGroup) {
+                for (index in 0 until view.childCount) applyTo(view.getChildAt(index))
+            }
+        }
+        applyTo(binding.root)
     }
 
     private fun showAvatar(uri: Uri) {

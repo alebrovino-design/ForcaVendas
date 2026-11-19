@@ -40,6 +40,15 @@ Estes botões são posicionados no topo do fragmento para fácil acesso.
 
 ## Como Funciona
 
+### Exclusão de pedidos pendentes
+
+Na tela de Pedidos, o botão **Excluir pedido** aparece para pedidos locais sem
+confirmação do ERP. A exclusão exige confirmação e remove o pedido somente do
+aparelho; pedidos confirmados ou em envio não podem ser excluídos.
+
+Após erro de conexão ou tempo limite, o ERP pode ter recebido o pedido mesmo
+sem confirmar ao aplicativo. Consulte o ERP antes de excluir ou reenviar.
+
 ### Fluxo de Sincronização
 
 ```

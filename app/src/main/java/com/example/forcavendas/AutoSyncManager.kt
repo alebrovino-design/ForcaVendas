@@ -13,8 +13,8 @@ import kotlin.concurrent.thread
 object AutoSyncManager {
     private const val PREFERENCES_NAME = "forca_vendas"
     private const val LAST_DAY_KEY = "auto_sync_last_day"
-    private const val TOKEN =
-        "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+    private val TOKEN =
+        BuildConfig.ERP_TEST_TOKEN
 
     fun syncOncePerDay(context: Context) {
         val preferences = context.getSharedPreferences(PREFERENCES_NAME, 0)

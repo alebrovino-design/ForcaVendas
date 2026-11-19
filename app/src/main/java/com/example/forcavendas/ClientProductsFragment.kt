@@ -1,4 +1,4 @@
-package com.example.forcavendas
+﻿package com.example.forcavendas
 
 import android.Manifest
 import android.graphics.BitmapFactory
@@ -15,6 +15,7 @@ import android.text.style.StyleSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -45,6 +46,9 @@ private class OperationNotFoundException(
 
 class ClientProductsFragment : Fragment() {
     private var binding: FragmentClientProductsBinding? = null
+    private var demonstrativeSummary: BonusSummaryService.Summary? = null
+    private var demonstrativeLoading = false
+    private var demonstrativeVisible = true
     private var products = listOf<ProductWithPrice>()
     private var clientId = ""
     private var regionId = ""
@@ -88,7 +92,6 @@ class ClientProductsFragment : Fragment() {
         val description: String,
         val photoUrl: String,
         val price: String,
-        val regionDescription: String,
         val productGroupId: String
     )
 
@@ -100,6 +103,27 @@ class ClientProductsFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         binding?.clientProductsBack?.setOnClickListener { findNavController().navigateUp() }
+        val preferences = requireContext().getSharedPreferences("forca_vendas", 0)
+        demonstrativeVisible = preferences.getBoolean("bonus_demonstrative_visible", true)
+        fun updateSearchVisibility() {
+            binding?.clientProductsSearchLayout?.visibility = if (demonstrativeVisible) View.VISIBLE else View.GONE
+        }
+        updateSearchVisibility()
+        binding?.clientProductsDemonstrativeToggle?.setOnClickListener {
+            demonstrativeVisible = !demonstrativeVisible
+            if (!demonstrativeVisible) {
+                binding?.clientProductsSearch?.let { search ->
+                    if (search.hasFocus()) {
+                        ContextCompat.getSystemService(requireContext(), InputMethodManager::class.java)
+                            ?.hideSoftInputFromWindow(search.windowToken, 0)
+                        search.clearFocus()
+                    }
+                }
+            }
+            preferences.edit().putBoolean("bonus_demonstrative_visible", demonstrativeVisible).apply()
+            updateSearchVisibility()
+            updateBonusSummary()
+        }
         var clientName = arguments?.getString("client_name").orEmpty()
         clientId = arguments?.getString("client_id").orEmpty()
         regionId = arguments?.getString("client_region_id").orEmpty()
@@ -186,18 +210,19 @@ class ClientProductsFragment : Fragment() {
             val existing = restored[productCode]
             val quantity = number(item, "ItemPedidoQtde", "ProdutoQuantidade", "Quantidade")
             val isBonus = number(item, "ItemPedidoAceite", "ItemPedidoAluminioAceite") > 0.0
-            val currentPrice = (0 until priceItems.length())
-                .asSequence()
-                .mapNotNull { priceItems.optJSONObject(it) }
-                .firstOrNull {
-                    it.optString("ItemtabelaProdutoCodigo") == productCode &&
-                        (regionId.isBlank() || it.optString("RegiaoId") == regionId)
-                }
-                ?.optString("ItemtabelaVlrVenda")
-                .orEmpty()
             val price = item.optString("ItemPedidoVlrOriginal")
                 .ifBlank { item.optString("ItemPedidoVrlUnitario") }
-                .ifBlank { currentPrice }
+                .ifBlank {
+                    (0 until priceItems.length())
+                        .asSequence()
+                        .mapNotNull { priceItems.optJSONObject(it) }
+                        .firstOrNull {
+                            it.optString("ItemtabelaProdutoCodigo") == productCode &&
+                                (regionId.isBlank() || it.optString("RegiaoId") == regionId)
+                        }
+                        ?.optString("ItemtabelaVlrVenda")
+                        .orEmpty()
+                }
             restored[productCode] = ClientCartService.CartItem(
                 productCode = productCode,
                 description = item.optString("ItemPedidoProdutoDescricao")
@@ -272,7 +297,6 @@ class ClientProductsFragment : Fragment() {
                         description = product.description,
                         photoUrl = product.photoUrl,
                         price = item.optString("ItemtabelaVlrVenda"),
-                        regionDescription = item.optString("RegiaoDescricao"),
                         productGroupId = product.productGroupId
                     )
                 )
@@ -288,7 +312,10 @@ class ClientProductsFragment : Fragment() {
                             "Nenhum produto com preço encontrado para esta região."
                 } else {
                     binding?.clientProductsMessage?.visibility = View.GONE
-                    showFilteredProducts("", append = false)
+                    showFilteredProducts(
+                        binding?.clientProductsSearch?.text?.toString().orEmpty(),
+                        append = false
+                    )
                 }
             }
         }
@@ -361,9 +388,6 @@ class ClientProductsFragment : Fragment() {
             content.addView(productText("Código", product.code, true))
             content.addView(productText("Produto", product.description, false))
             content.addView(productText("Valor", formatCurrency(product.price), true))
-            if (product.regionDescription.isNotBlank()) {
-                content.addView(productText("Região", product.regionDescription, false))
-            }
             val cartItem = cartItems
                 .firstOrNull { it.productCode == product.code }
 
@@ -468,20 +492,9 @@ class ClientProductsFragment : Fragment() {
                     textSize = 12f
                     setTextColor(resources.getColor(R.color.text_secondary, requireContext().theme))
                     text = "Saldo: ${formatQuantity((limit.allowedBonus - otherBonusInGroup).coerceAtLeast(0.0))} unid. | " +
-                        "Base ${formatQuantity(limit.bonusPercent)}% + tolerância ${formatQuantity(limit.extraPercent)}%"
+                        "Base ${formatQuantity(limit.bonusPercent)}% + tolerância ${formatQuantity(limit.extraPercent)}% sobre a venda"
                 }
                 quantities.addView(bonusInfoText)
-            } else {
-                val noBonusText = TextView(requireContext()).apply {
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { topMargin = dp(8) }
-                    textSize = 12f
-                    setTextColor(resources.getColor(R.color.text_secondary, requireContext().theme))
-                    text = "ℹ️ Sem bonificação configurada para esta região/grupo"
-                }
-                quantities.addView(noBonusText)
             }
             
             content.addView(quantities)
@@ -529,7 +542,7 @@ class ClientProductsFragment : Fragment() {
                         val allowed = formatQuantity((limit.allowedBonus - otherBonusQuantity).coerceAtLeast(0.0))
                         Toast.makeText(
                             requireContext(),
-                            "Bonificação máxima restante do grupo: $allowed unidade(s). Base ${formatQuantity(limit.bonusPercent)}% + tolerância ${formatQuantity(limit.extraPercent)}%.",
+                            "Bonificação máxima restante do grupo: $allowed unidade(s). Base ${formatQuantity(limit.bonusPercent)}% + tolerância ${formatQuantity(limit.extraPercent)}% sobre a venda.",
                             Toast.LENGTH_LONG
                         ).show()
                         return@setOnClickListener
@@ -602,8 +615,14 @@ class ClientProductsFragment : Fragment() {
             price * item.bonusQuantity
         }
         val cartBonifiableAmount = calculateCartBonifiableAmount()
-        container.visibility = View.VISIBLE
+        val displayedBonifiableAmount = java.math.BigDecimal.valueOf(cartBonifiableAmount)
+            .setScale(2, java.math.RoundingMode.HALF_EVEN)
+        binding?.clientProductsBonusPanel?.visibility = View.VISIBLE
         container.removeAllViews()
+        binding?.clientProductsDemonstrativeToggle?.setText(
+            if (demonstrativeVisible) R.string.hide_bonus_demonstrative
+            else R.string.show_bonus_demonstrative
+        )
 
         val demonstrativeMetrics = LinearLayout(requireContext()).apply {
             layoutParams = LinearLayout.LayoutParams(
@@ -611,21 +630,40 @@ class ClientProductsFragment : Fragment() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
             orientation = LinearLayout.HORIZONTAL
+            visibility = if (demonstrativeVisible) View.VISIBLE else View.GONE
+        }
+        val userId = SessionManager.currentUserId(requireContext())
+        val history = demonstrativeSummary
+            ?: BonusSummaryService.loadCached(requireContext(), userId)
+            ?: BonusSummaryService.Summary(0.0, 0.0, 0.0)
+        if (demonstrativeSummary == null && !demonstrativeLoading && userId.isNotBlank()) {
+            demonstrativeLoading = true
+            val appContext = requireContext().applicationContext
+            kotlin.concurrent.thread {
+                val loaded = runCatching { BonusSummaryService.load(appContext, userId) }.getOrNull()
+                Handler(Looper.getMainLooper()).post {
+                    demonstrativeLoading = false
+                    if (loaded != null && isAdded && binding != null) {
+                        demonstrativeSummary = loaded
+                        updateBonusSummary()
+                    }
+                }
+            }
         }
         demonstrativeMetrics.addView(createBonusMetric(
             "Saldo (demonstrativo)",
-            formatCurrency("0"),
+            formatCurrency(history.balance.toString()),
             R.color.text_primary
         ))
         demonstrativeMetrics.addView(createBonusMetric(
             "A bonificar (demonstrativo)",
-            formatCurrency("0"),
+            formatCurrency(history.toBonify.toString()),
             R.color.achieved_blue
         ))
         demonstrativeMetrics.addView(createBonusMetric(
             "Bonificado (demonstrativo)",
-            formatCurrency("0"),
-            R.color.financial_red
+            formatCurrency(history.bonified.toString()),
+            R.color.financial_red_text
         ))
         container.addView(demonstrativeMetrics)
 
@@ -639,12 +677,12 @@ class ClientProductsFragment : Fragment() {
         cartMetrics.addView(createBonusMetric(
             "Bonificado no carrinho",
             formatCurrency(cartBonusAmount.toString()),
-            R.color.financial_red
+            R.color.financial_red_text
         ))
         cartMetrics.addView(createBonusMetric(
             "Bonificar no carrinho",
-            formatCurrency(cartBonifiableAmount.toString()),
-            R.color.achieved_blue
+            formatCurrency(displayedBonifiableAmount.toPlainString()),
+            if (displayedBonifiableAmount.signum() < 0) R.color.financial_red_text else R.color.achieved_blue
         ))
         container.addView(cartMetrics)
     }
@@ -665,17 +703,19 @@ class ClientProductsFragment : Fragment() {
                     soldQuantity
                 ) ?: return@forEach
 
-                val remainingQuantity =
-                    (limit.allowedBonus - currentBonusQuantity).coerceAtLeast(0.0)
-                val soldUnits = soldQuantity.coerceAtLeast(0.000001)
-                val weightedAveragePrice = groupItems.sumOf { item ->
+                val soldAmount = groupItems.sumOf { item ->
                     val price = item.price.replace(",", ".").toDoubleOrNull() ?: 0.0
                     price * item.soldQuantity
-                } / soldUnits
-                configuredAmount += remainingQuantity * weightedAveragePrice
+                }
+                configuredAmount += BonusConfigurationService.calculateBonifiableAmount(
+                    soldQuantity,
+                    soldAmount,
+                    currentBonusQuantity,
+                    limit.bonusPercent
+                )
             }
 
-        return configuredAmount.coerceAtLeast(0.0)
+        return configuredAmount
     }
 
     private fun createBonusMetric(

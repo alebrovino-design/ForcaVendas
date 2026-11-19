@@ -1,5 +1,11 @@
 # 🎉 Força de Vendas - Versão 3
 
+## Configuração da API para testes
+
+Adicione `erp.test.token=<token de teste>` ao arquivo `local.properties` na raiz do
+projeto. Esse arquivo não é enviado ao Git. Não use credenciais de produção:
+o token de teste é incorporado ao APK e pode ser extraído dele.
+
 ## ✅ Status: PRONTO PARA TESTES
 
 APK compilado com sucesso (7.79 MB)

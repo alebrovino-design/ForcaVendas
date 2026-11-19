@@ -38,8 +38,9 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="16dp"
-        android:hint="Buscar por código, nome ou CNPJ"
+        android:hint="Buscar clientes"
         app:boxBackgroundColor="@color/login_field"
+        app:helperText="Código, CPF/CNPJ, nome, fantasia, cidade ou endereço"
         app:hintTextColor="@color/text_primary">
 
         <com.google.android.material.textfield.TextInputEditText

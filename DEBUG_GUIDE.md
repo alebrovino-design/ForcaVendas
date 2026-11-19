@@ -24,7 +24,7 @@ adb logcat | grep "ERPOrderDownload"
 
 ### Com cURL (Terminal):
 ```bash
-curl -v "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpPedidoVendaRepAPPVenda?Parametrostegaceptoken=dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg==&Representanteid=10418"
+curl -v "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpPedidoVendaRepAPPVenda?Parametrostegaceptoken=<TOKEN_ERP>&Representanteid=10418"
 ```
 
 **Analisar resposta:**
@@ -78,7 +78,7 @@ W/System.err: java.net.SocketTimeoutException: timeout
 **`app/src/main/java/com/example/forcavendas/ERPConfig.kt`**
 
 ```kotlin
-private const val DEFAULT_ERP_TOKEN = "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+private const val DEFAULT_ERP_TOKEN = "<TOKEN_ERP>"
 ```
 
 ✅ **Verificar:**

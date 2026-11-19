@@ -8,9 +8,9 @@ import java.net.URLEncoder
 import java.net.URL
 
 object ProductGroupService {
-    private const val ENDPOINT =
+    private val ENDPOINT =
         "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpGrupoProdutoAppVenda" +
-            "?Parametrostegaceptoken=dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+            "?Parametrostegaceptoken=${URLEncoder.encode(BuildConfig.ERP_TEST_TOKEN, "UTF-8")}"
 
     fun sync(context: Context): Int {
         val connection = URL(ENDPOINT).openConnection() as HttpURLConnection

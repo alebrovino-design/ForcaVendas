@@ -1,0 +1,16 @@
+<resources>
+    <color name="primary_green">#315DB5</color>
+    <color name="background_green">#0C1530</color>
+    <color name="text_primary">#F4F7FF</color>
+    <color name="text_secondary">#B8C6E5</color>
+    <color name="login_background">#0C1530</color>
+    <color name="login_field">#19284D</color>
+    <color name="login_button">#315DB5</color>
+    <color name="button_light_blue">#344F82</color>
+    <color name="menu_header">#172A64</color>
+    <color name="target_gray">#71809F</color>
+    <color name="achieved_blue">#A5BDFF</color>
+    <color name="overdue_red">#4C2230</color>
+    <color name="overdue_text">#FFB4B1</color>
+    <color name="financial_red_text">#FFB4B1</color>
+</resources>

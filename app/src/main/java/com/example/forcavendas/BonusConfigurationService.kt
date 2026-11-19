@@ -9,8 +9,8 @@ import java.net.URLEncoder
 object BonusConfigurationService {
     private const val ENDPOINT =
         "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpConfigBonificacaoAppVenda"
-    private const val TOKEN =
-        "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+    private val TOKEN =
+        BuildConfig.ERP_TEST_TOKEN
     private const val PREFERENCES_NAME = "forca_vendas"
 
     fun sync(context: Context): Int {
@@ -85,14 +85,29 @@ object BonusConfigurationService {
             .replace(",", ".").toDoubleOrNull() ?: 0.0
         val extraPercent = config.optString("ConfigBonificacaoPermitirMais")
             .replace(",", ".").toDoubleOrNull() ?: 0.0
-        val baseBonus = soldQuantity * bonusPercent / 100.0
-        val allowedBonus = baseBonus * (1.0 + extraPercent / 100.0)
         return BonusLimit(
             threshold = selectedThreshold,
             bonusPercent = bonusPercent,
             extraPercent = extraPercent,
-            allowedBonus = allowedBonus
+            allowedBonus = calculateAllowedBonus(soldQuantity, bonusPercent, extraPercent)
         )
+    }
+
+    internal fun calculateAllowedBonus(
+        soldQuantity: Double,
+        bonusPercent: Double,
+        extraPercent: Double
+    ): Double = soldQuantity * (bonusPercent + extraPercent) / 100.0
+
+    internal fun calculateBonifiableAmount(
+        soldQuantity: Double,
+        soldAmount: Double,
+        bonusQuantity: Double,
+        bonusPercent: Double
+    ): Double {
+        if (soldQuantity <= 0.0) return 0.0
+        val baseBonus = soldQuantity * bonusPercent / 100.0
+        return (baseBonus - bonusQuantity) * (soldAmount / soldQuantity)
     }
 
     data class BonusLimit(

@@ -7,6 +7,9 @@ import org.json.JSONObject
 object OrderDraftService {
     private const val PREFERENCES_NAME = "forca_vendas"
     private const val DRAFTS_KEY = "order_drafts_json"
+    private val sending = mutableSetOf<Long>()
+
+    enum class RemoveResult { REMOVED, NOT_FOUND, ALREADY_SENT, SENDING }
 
     data class Draft(
         val mobileId: Long,
@@ -56,36 +59,70 @@ object OrderDraftService {
         return result.sortedWith(compareByDescending<Draft> { it.mobileId })
     }
 
-    fun remove(context: Context, mobileId: Long) {
+    @Synchronized
+    fun removePending(context: Context, mobileId: Long): RemoveResult {
+        require(mobileId > 0) { "Identificador móvel do pedido inválido." }
+        if (mobileId in sending) return RemoveResult.SENDING
+
         val preferences = context.getSharedPreferences(PREFERENCES_NAME, 0)
-        val array = try {
-            JSONArray(preferences.getString(DRAFTS_KEY, "[]") ?: "[]")
-        } catch (_: Exception) {
-            JSONArray()
+        val array = JSONArray(preferences.getString(DRAFTS_KEY, "[]") ?: "[]")
+        val matches = (0 until array.length()).mapNotNull { index ->
+            array.optJSONObject(index)?.optJSONObject("sdtPedidoAppVenda")
+                ?.takeIf { it.optLong("PedidoMobId", 0L) == mobileId }
         }
+        if (matches.isEmpty()) return RemoveResult.NOT_FOUND
+        check(matches.size == 1) { "Há mais de um pedido com o mesmo identificador." }
+        if (matches.single().optLong("PedidoERPId", 0L) > 0L) return RemoveResult.ALREADY_SENT
+
         val remaining = JSONArray()
         for (index in 0 until array.length()) {
-            val wrapper = array.optJSONObject(index) ?: continue
-            val order = wrapper.optJSONObject("sdtPedidoAppVenda")
-            if (order?.optLong("PedidoMobId", 0L) != mobileId) remaining.put(wrapper)
+            val item = array.get(index)
+            val order = (item as? JSONObject)?.optJSONObject("sdtPedidoAppVenda")
+            if (order?.optLong("PedidoMobId", 0L) != mobileId) remaining.put(item)
         }
-        preferences.edit().putString(DRAFTS_KEY, remaining.toString()).apply()
+        check(preferences.edit().putString(DRAFTS_KEY, remaining.toString()).commit()) {
+            "Não foi possível salvar a exclusão do pedido."
+        }
+        return RemoveResult.REMOVED
     }
 
-    fun markSent(context: Context, mobileId: Long, erpId: Long) {
+    @Synchronized
+    fun beginSending(context: Context, mobileId: Long): Boolean {
+        if (mobileId <= 0L || mobileId in sending) return false
         val preferences = context.getSharedPreferences(PREFERENCES_NAME, 0)
-        val array = try {
-            JSONArray(preferences.getString(DRAFTS_KEY, "[]") ?: "[]")
-        } catch (_: Exception) {
-            return
+        val array = JSONArray(preferences.getString(DRAFTS_KEY, "[]") ?: "[]")
+        val matches = (0 until array.length()).mapNotNull { index ->
+            array.optJSONObject(index)?.optJSONObject("sdtPedidoAppVenda")
+                ?.takeIf { it.optLong("PedidoMobId", 0L) == mobileId }
         }
+        check(matches.size <= 1) { "Há mais de um pedido com o mesmo identificador." }
+        if (matches.isEmpty() || matches.single().optLong("PedidoERPId", 0L) > 0L) return false
+        sending.add(mobileId)
+        return true
+    }
+
+    @Synchronized
+    fun endSending(mobileId: Long) {
+        sending.remove(mobileId)
+    }
+
+    @Synchronized
+    fun markSent(context: Context, mobileId: Long, erpId: Long) {
+        require(erpId > 0L) { "Identificador ERP do pedido inválido." }
+        val preferences = context.getSharedPreferences(PREFERENCES_NAME, 0)
+        val array = JSONArray(preferences.getString(DRAFTS_KEY, "[]") ?: "[]")
+        var matches = 0
         for (index in 0 until array.length()) {
             val wrapper = array.optJSONObject(index) ?: continue
             val order = wrapper.optJSONObject("sdtPedidoAppVenda") ?: continue
             if (order.optLong("PedidoMobId", 0L) != mobileId) continue
+            matches++
             order.put("PedidoERPId", erpId)
             order.put("PedidoStatus", "ENVIADO AO ERP")
         }
-        preferences.edit().putString(DRAFTS_KEY, array.toString()).apply()
+        check(matches == 1) { "Não foi possível identificar o pedido enviado." }
+        check(preferences.edit().putString(DRAFTS_KEY, array.toString()).commit()) {
+            "Não foi possível salvar a confirmação do ERP."
+        }
     }
 }

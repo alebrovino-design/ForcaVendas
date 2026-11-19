@@ -13,12 +13,8 @@ import android.content.Context
  */
 object ERPConfig {
     
-    // ⚠️ WARNING: This is a hardcoded default token. In production:
-    // 1. Store in secure SharedPreferences
-    // 2. OR retrieve from secure backend after login
-    // 3. OR use OAuth2/similar secure authentication
-    // 4. NEVER hardcode production tokens
-    private const val DEFAULT_ERP_TOKEN = "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+    // The test token is embedded in the APK; production needs a secure backend.
+    private val DEFAULT_ERP_TOKEN = BuildConfig.ERP_TEST_TOKEN
     
     private const val ERP_API_TOKEN_KEY = "erp_api_token"
     private const val PREFERENCES_NAME = "forca_vendas"

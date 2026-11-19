@@ -11,7 +11,7 @@
 **Correção:**
 ```kotlin
 // ANTES
-private val token = "dSJQ4qUlSwdNs3T/OipnOo8F0UOVuFHC7TCRjr9DcmEbMpCc1gwhUAYDj3M82WOQbHKRFAwSr5i8lNsBcQyVg=="
+private val token = "<TOKEN_ERP>"
 val endpoint = "...&Usuarioid=${URLEncoder.encode(userId, "UTF-8")}"
 
 // DEPOIS

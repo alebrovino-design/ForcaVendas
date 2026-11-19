@@ -13,19 +13,26 @@
         android:layout_height="match_parent"
         android:padding="24dp">
 
-        <TextView
+        <com.google.android.material.card.MaterialCardView
             android:id="@+id/login_title"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_width="230dp"
+            android:layout_height="80dp"
             android:layout_marginTop="56dp"
-            android:text="@string/login_title"
-            android:textAlignment="center"
-            android:textColor="@color/text_primary"
-            android:textSize="28sp"
-            android:textStyle="bold"
+            app:cardBackgroundColor="@color/white"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="0dp"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintTop_toTopOf="parent">
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="Special Nutri"
+                android:padding="16dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/specialnutri_logo" />
+        </com.google.android.material.card.MaterialCardView>
 
         <TextView
             android:id="@+id/login_subtitle"
@@ -86,33 +93,8 @@
                 android:id="@+id/edit_password"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:imeOptions="actionNext"
-                android:inputType="textPassword"
-                android:textColor="@color/text_primary" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/license_layout"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:hint="@string/login_license"
-            app:boxBackgroundColor="@color/login_field"
-            app:boxStrokeColor="@color/login_button"
-            app:hintTextColor="@color/text_primary"
-            app:startIconDrawable="@android:drawable/ic_menu_info_details"
-            app:startIconTint="@color/text_primary"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/password_layout">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/edit_license"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
                 android:imeOptions="actionDone"
-                android:inputType="textCapCharacters"
+                android:inputType="textPassword"
                 android:textColor="@color/text_primary" />
         </com.google.android.material.textfield.TextInputLayout>
 
@@ -128,7 +110,7 @@
             app:cornerRadius="12dp"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/license_layout" />
+            app:layout_constraintTop_toBottomOf="@id/password_layout" />
 
         <TextView
             android:id="@+id/login_offline_message"
