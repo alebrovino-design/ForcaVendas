@@ -13,6 +13,7 @@ import kotlin.concurrent.thread
 object AutoSyncManager {
     private const val PREFERENCES_NAME = "forca_vendas"
     private const val LAST_DAY_KEY = "auto_sync_last_day"
+    internal val downloadLock = Any()
     private val TOKEN =
         BuildConfig.ERP_TEST_TOKEN
 
@@ -27,29 +28,32 @@ object AutoSyncManager {
         preferences.edit().putString(LAST_DAY_KEY, today).apply()
 
         thread {
-            runCatching { syncTarget(context, userId) }
-            runCatching { syncClients(context, userId) }
-            runCatching { syncFinancial(context, userId) }
-            runCatching { syncProducts(context) }
-            runCatching { ProductGroupService.sync(context.applicationContext) }
-            runCatching { PriceTableItemService.sync(context.applicationContext) }
-            runCatching { BonusConfigurationService.sync(context) }
-            runCatching { TaxGroupService.sync(context.applicationContext) }
-            runCatching { syncLoads(context, userId) }
-            runCatching { syncDeliveries(context, userId) }
-            runCatching { syncCompanies(context) }
-            runCatching { syncOrderOperations(context) }
-            runCatching { syncPaymentConditions(context) }
+            synchronized(downloadLock) {
+                runCatching { syncTarget(context, userId) }
+                runCatching { syncClients(context, userId) }
+                runCatching { syncFinancial(context, userId) }
+                runCatching { syncProducts(context) }
+                runCatching { ProductGroupService.sync(context.applicationContext) }
+                runCatching { PriceTableItemService.sync(context.applicationContext) }
+                runCatching { BonusConfigurationService.sync(context) }
+                runCatching { TaxGroupService.sync(context.applicationContext) }
+                runCatching { syncLoads(context, userId) }
+                runCatching { syncDeliveries(context, userId) }
+                runCatching { syncCompanies(context) }
+                runCatching { syncOrderOperations(context) }
+                runCatching { syncPaymentConditions(context) }
+            }
         }
     }
 
-    private fun syncTarget(context: Context, userId: String) {
+    internal fun syncTarget(context: Context, userId: String) {
         val month = SimpleDateFormat("yyyyMM", Locale.US).format(Date())
         val targetData = TargetService.load(userId, month)
         TargetService.save(context, userId, month, targetData)
     }
 
-    private fun syncClients(context: Context, userId: String) {
+    internal fun syncClients(context: Context, userId: String) {
+        require(userId.isNotBlank()) { "Código do representante não disponível" }
         val endpoint = "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpEntidadeRepAPPVenda" +
             "?Usuarioid=${URLEncoder.encode(userId, "UTF-8")}" +
             "&Parametrostegaceptoken=${URLEncoder.encode(TOKEN, "UTF-8")}"
@@ -62,7 +66,8 @@ object AutoSyncManager {
             .apply()
     }
 
-    private fun syncFinancial(context: Context, userId: String) {
+    internal fun syncFinancial(context: Context, userId: String) {
+        require(userId.isNotBlank()) { "Código do representante não disponível" }
         val endpoint = "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpMovFinanceiroRepAPPVenda" +
             "?Usuarioid=${URLEncoder.encode(userId, "UTF-8")}" +
             "&Parametrostegaceptoken=${URLEncoder.encode(TOKEN, "UTF-8")}"
@@ -75,7 +80,7 @@ object AutoSyncManager {
             .apply()
     }
 
-    private fun syncProducts(context: Context) {
+    internal fun syncProducts(context: Context) {
         val endpoint = "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpProdutoAPPVenda" +
             "?Parametrostegaceptoken=${URLEncoder.encode(TOKEN, "UTF-8")}"
         val response = downloadJson(endpoint)
@@ -106,7 +111,8 @@ object AutoSyncManager {
             .apply()
     }
 
-    private fun syncLoads(context: Context, userId: String) {
+    internal fun syncLoads(context: Context, userId: String) {
+        require(userId.isNotBlank()) { "Código do representante não disponível" }
         val endpoint =
             "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpCargaRepresentanteAppVenda" +
                 "?Parametrostegaceptoken=${URLEncoder.encode(TOKEN, "UTF-8")}" +
@@ -134,7 +140,7 @@ object AutoSyncManager {
             .apply()
     }
 
-    private fun syncOrderOperations(context: Context) {
+    internal fun syncOrderOperations(context: Context) {
         val endpoint =
             "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpTipoOpPedidoCompletaAPPVenda" +
                 "?Parametrostegaceptoken=${URLEncoder.encode(TOKEN, "UTF-8")}"
@@ -148,7 +154,7 @@ object AutoSyncManager {
             .apply()
     }
 
-    private fun syncCompanies(context: Context) {
+    internal fun syncCompanies(context: Context) {
         val endpoint =
             "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpEmpresaAPPVenda" +
                 "?Parametrostegaceptoken=${URLEncoder.encode(TOKEN, "UTF-8")}"
@@ -162,7 +168,7 @@ object AutoSyncManager {
             .apply()
     }
 
-    private fun syncPaymentConditions(context: Context) {
+    internal fun syncPaymentConditions(context: Context) {
         val endpoint =
             "https://erpgnisn.specialnutri.com.br/specialnutri/rest/dpCondicaoPgtoAPPVendaVlrMin" +
                 "?Parametrostegaceptoken=${URLEncoder.encode(TOKEN, "UTF-8")}"

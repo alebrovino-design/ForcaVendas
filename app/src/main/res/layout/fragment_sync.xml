@@ -42,6 +42,39 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/sync_all_button"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="16dp"
+        android:text="Sincronizar todas as buscas"
+        android:textAllCaps="false"
+        app:backgroundTint="@color/login_button"
+        app:cornerRadius="12dp" />
+
+    <TextView
+        android:id="@+id/sync_all_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="16dp"
+        android:text="Atualiza os dados do ERP sem enviar clientes ou pedidos."
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp" />
+
+    <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/sync_all_progress"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="16dp"
+        android:indeterminate="true"
+        android:visibility="gone" />
+
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -63,6 +63,48 @@ class SyncFragment : Fragment() {
         binding?.syncCompaniesButton?.setOnClickListener { syncCompanies() }
         binding?.syncTaxGroupsButton?.setOnClickListener { syncTaxGroups() }
         binding?.syncPaymentConditionsButton?.setOnClickListener { syncPaymentConditions() }
+        binding?.syncAllButton?.setOnClickListener {
+            if (syncButtons().any { !it.isEnabled }) {
+                Toast.makeText(requireContext(), "Aguarde a sincronização em andamento.", Toast.LENGTH_SHORT).show()
+            } else {
+                DownloadSyncManager.start(requireContext())
+            }
+        }
+        DownloadSyncManager.attach { updateGeneralSyncStatus() }
+    }
+
+    private fun syncButtons(): List<View> {
+        val views = binding ?: return emptyList()
+        return listOf(
+            views.syncProductsButton, views.syncProductGroupsButton, views.syncPriceTableButton,
+            views.syncCompaniesButton, views.syncTargetButton, views.syncClientsButton,
+            views.syncPendingClientsButton, views.syncFinancialButton, views.syncBonusConfigurationButton,
+            views.syncLoadsButton, views.syncOrderOperationsButton, views.syncTaxGroupsButton,
+            views.syncPaymentConditionsButton
+        )
+    }
+
+    private fun updateGeneralSyncStatus() {
+        val views = binding ?: return
+        val running = DownloadSyncManager.isRunning
+        views.syncAllButton.isEnabled = !running
+        views.syncAllProgress.visibility = if (running) View.VISIBLE else View.GONE
+        views.syncAllStatus.text = DownloadSyncManager.message
+        syncButtons().forEach { it.isEnabled = !running }
+        if (!running) {
+            updateProductStatus()
+            updateProductGroupStatus()
+            updatePriceTableStatus()
+            updateCompaniesStatus()
+            updateTargetStatus()
+            updateClientsStatus()
+            updateFinancialStatus()
+            updateBonusConfigurationStatus()
+            updateLoadsStatus()
+            updateOrderOperationsStatus()
+            updateTaxGroupsStatus()
+            updatePaymentConditionsStatus()
+        }
     }
 
     private fun updateProductStatus() {
@@ -954,6 +996,7 @@ class SyncFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        DownloadSyncManager.detach()
         binding = null
         super.onDestroyView()
     }

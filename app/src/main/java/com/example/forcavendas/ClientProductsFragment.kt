@@ -3,6 +3,7 @@
 import android.Manifest
 import android.graphics.BitmapFactory
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -15,6 +16,7 @@ import android.text.style.StyleSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -27,6 +29,8 @@ import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
@@ -62,6 +66,10 @@ class ClientProductsFragment : Fragment() {
     private var pendingFinalizeCondition: PaymentConditionService.Condition? = null
     private var pendingFinalizeSaleType: String = "BO"
     private var pendingFinalizeCompany: CompanyLocalRepository.Company? = null
+    private var previousSoftInputMode: Int? = null
+    private var keyboardVisible = false
+    private var focusedQuantity: TextInputEditText? = null
+    private var focusedQuantityCard: View? = null
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -102,6 +110,26 @@ class ClientProductsFragment : Fragment() {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
+            val window = requireActivity().window
+            previousSoftInputMode = window.attributes.softInputMode
+            @Suppress("DEPRECATION")
+            window.setSoftInputMode(
+                (window.attributes.softInputMode and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST.inv()) or
+                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            )
+        }
+        val bottomPadding = view.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(view) { root, insets ->
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            root.setPadding(root.paddingLeft, root.paddingTop, root.paddingRight,
+                bottomPadding + (ime.bottom - systemBars.bottom).coerceAtLeast(0))
+            keyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+            updateQuantityEditingMode()
+            insets
+        }
+        ViewCompat.requestApplyInsets(view)
         binding?.clientProductsBack?.setOnClickListener { findNavController().navigateUp() }
         val preferences = requireContext().getSharedPreferences("forca_vendas", 0)
         demonstrativeVisible = preferences.getBoolean("bonus_demonstrative_visible", true)
@@ -437,6 +465,17 @@ class ClientProductsFragment : Fragment() {
                     minimumWidth = dp(72)
                     inputType = android.text.InputType.TYPE_CLASS_NUMBER or
                         android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    setOnFocusChangeListener { _, hasFocus ->
+                        if (hasFocus) {
+                            focusedQuantity = this
+                            focusedQuantityCard = card
+                            updateQuantityEditingMode()
+                        } else if (focusedQuantity === this) {
+                            focusedQuantity = null
+                            focusedQuantityCard = null
+                            updateQuantityEditingMode()
+                        }
+                    }
                 }
                 inputLayout.addView(input)
 
@@ -571,6 +610,33 @@ class ClientProductsFragment : Fragment() {
             card.addView(row)
             list.addView(card)
             loadPhoto(product.photoUrl, photo)
+        }
+    }
+
+    private fun updateQuantityEditingMode() {
+        val views = binding ?: return
+        val input = focusedQuantity
+        val card = focusedQuantityCard
+        val editing = keyboardVisible && input?.hasFocus() == true && card != null
+        views.clientProductsHeader.visibility = if (editing) View.GONE else View.VISIBLE
+        views.clientProductsControls.visibility = if (editing) View.GONE else View.VISIBLE
+        if (editing) {
+            val scroll = views.clientProductsScroll
+            scroll.post {
+                if (binding !== views || !keyboardVisible || focusedQuantity !== input ||
+                    !input.hasFocus() || scroll.findFocus() !== input
+                ) {
+                    return@post
+                }
+                val cardBounds = android.graphics.Rect()
+                val inputBounds = android.graphics.Rect()
+                card.getDrawingRect(cardBounds)
+                input.getDrawingRect(inputBounds)
+                scroll.offsetDescendantRectToMyCoords(card, cardBounds)
+                scroll.offsetDescendantRectToMyCoords(input, inputBounds)
+                val visibleHeight = scroll.height - scroll.paddingTop - scroll.paddingBottom
+                scroll.smoothScrollTo(0, maxOf(cardBounds.top, inputBounds.bottom - visibleHeight))
+            }
         }
     }
 
@@ -1630,6 +1696,11 @@ class ClientProductsFragment : Fragment() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     override fun onDestroyView() {
+        previousSoftInputMode?.let { requireActivity().window.setSoftInputMode(it) }
+        previousSoftInputMode = null
+        keyboardVisible = false
+        focusedQuantity = null
+        focusedQuantityCard = null
         binding = null
         super.onDestroyView()
     }

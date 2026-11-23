@@ -68,7 +68,6 @@ class SecondFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         val preferences = requireContext().getSharedPreferences("forca_vendas", 0)
-        binding.menuAppVersion.text = getString(R.string.app_version, BuildConfig.VERSION_NAME)
         var darkMenu = preferences.getBoolean("dashboard_dark_mode", false)
         applyMenuAppearance(darkMenu)
         binding.menuThemeButton.setOnClickListener {
@@ -89,6 +88,7 @@ class SecondFragment : Fragment() {
         binding.menuUserDetails.text = buildString {
             append("Licença: ").append(license)
             if (!userId.isNullOrBlank()) append("  •  ID: ").append(userId)
+            append("  •  ").append(getString(R.string.app_version, BuildConfig.VERSION_NAME))
         }
         binding.menuAvatarInitials.text = username
             ?.trim()

@@ -1241,8 +1241,14 @@ class OrdersFragment : Fragment() {
             )
 
             y = 66f
-            val clientName = firstValue(order, "PedidoEntidadeNomeFantasia", "PedidoEntidadeNome")
-                .ifBlank { draft.clientName }
+            val reasonName = firstValue(order, "PedidoEntidadeNomeRazao")
+                .ifBlank { client?.optString("EntidadeNomeRazao").orEmpty() }
+                .ifBlank {
+                    firstValue(order, "PedidoEntidadeNomeFantasia", "PedidoEntidadeNome")
+                        .ifBlank { draft.clientName }
+                }
+            val fantasyName = firstValue(order, "PedidoEntidadeNomeFantasia")
+                .ifBlank { client?.optString("EntidadeNomeFantasia").orEmpty() }
             val document = firstValue(order, "PedidoEntidadeCPFCNPJ")
                 .ifBlank { client?.optString("EntidadeCPFCNPJ").orEmpty() }
             val address = firstValue(order, "PedidoEntidadeEndereco")
@@ -1270,8 +1276,13 @@ class OrdersFragment : Fragment() {
             }
             val mediumTerm = firstValue(order, "PedidoCondicaoPgtoPrazoMedio")
             val saleType = firstValue(order, "PedidoTipoVenda")
-            val infoRows = listOf(
-                "Cliente: $clientId - $clientName" to "CNPJ: $document",
+            val infoRows = mutableListOf(
+                "Cliente: $clientId - Razão social: $reasonName" to "CNPJ: $document"
+            )
+            if (fantasyName.isNotBlank()) {
+                infoRows += "Nome fantasia: $fantasyName" to ""
+            }
+            infoRows += listOf(
                 "Endereço: ${listOf(address, addressNumber).filter { it.isNotBlank() }.joinToString(" - ")}" to
                     "I.E.: $stateRegistration",
                 "Bairro: $neighborhood" to "Cidade: $city    UF: $state",

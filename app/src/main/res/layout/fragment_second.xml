@@ -378,15 +378,6 @@
                 </com.google.android.material.card.MaterialCardView>
             </GridLayout>
 
-            <TextView
-                android:id="@+id/menu_app_version"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:gravity="center"
-                android:tag="dashboard_secondary"
-                android:textColor="@color/dashboard_secondary_light"
-                android:textSize="12sp" />
         </LinearLayout>
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
